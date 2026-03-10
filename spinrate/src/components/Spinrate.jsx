@@ -1317,40 +1317,121 @@ function AlbumPage({ albumId, onNavigate, userId }) {
   );
 }
 
+// ─── EDIT PROFILE MODAL ──────────────────────────────────────────────────────
+function EditProfileModal({ profile, onClose, onSaved }) {
+  const [displayName, setDisplayName] = useState(profile?.display_name||"");
+  const [bio, setBio] = useState(profile?.bio||"");
+  const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url||"");
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    const { error } = await supabase.from("profiles").update({
+      display_name: displayName.trim(),
+      bio: bio.trim(),
+      avatar_url: avatarUrl.trim() || null,
+    }).eq("id", profile.id);
+    if (!error) onSaved();
+    else alert("Error: " + error.message);
+    setSaving(false);
+  };
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:300, backdropFilter:"blur(8px)", padding:20 }}
+      onClick={e=>{ if(e.target===e.currentTarget) onClose(); }}>
+      <div style={{ background:T.surface, borderRadius:20, width:"100%", maxWidth:420, border:`1px solid ${T.border}`, padding:"24px" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+          <div style={{ fontSize:17, fontWeight:700, color:T.text }}>Editar perfil</div>
+          <button onClick={onClose} style={{ background:T.surface2, border:`1px solid ${T.border}`, borderRadius:"50%", width:28, height:28, cursor:"pointer", fontSize:15, color:T.textSub, display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
+        </div>
+        <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+          <div>
+            <div style={{ fontSize:12, color:T.textMute, marginBottom:5 }}>Nombre</div>
+            <input value={displayName} onChange={e=>setDisplayName(e.target.value)} placeholder="Tu nombre"
+              style={{ width:"100%", padding:"11px 14px", background:T.surface2, border:`1.5px solid ${T.border}`, borderRadius:12, fontSize:14, color:T.text, outline:"none", fontFamily:"inherit" }}
+              onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.border}/>
+          </div>
+          <div>
+            <div style={{ fontSize:12, color:T.textMute, marginBottom:5 }}>Bio</div>
+            <textarea value={bio} onChange={e=>setBio(e.target.value)} placeholder="Contá algo sobre vos..." rows={3}
+              style={{ width:"100%", padding:"11px 14px", background:T.surface2, border:`1.5px solid ${T.border}`, borderRadius:12, fontSize:14, color:T.text, outline:"none", fontFamily:"inherit", resize:"none" }}
+              onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.border}/>
+          </div>
+          <div>
+            <div style={{ fontSize:12, color:T.textMute, marginBottom:5 }}>URL de foto de perfil</div>
+            <input value={avatarUrl} onChange={e=>setAvatarUrl(e.target.value)} placeholder="https://..."
+              style={{ width:"100%", padding:"11px 14px", background:T.surface2, border:`1.5px solid ${T.border}`, borderRadius:12, fontSize:14, color:T.text, outline:"none", fontFamily:"inherit" }}
+              onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.border}/>
+          </div>
+          <div style={{ display:"flex", gap:10, marginTop:4 }}>
+            <button onClick={onClose} style={{ flex:1, padding:"11px", background:"none", border:`1px solid ${T.border}`, borderRadius:12, color:T.textSub, fontSize:14, cursor:"pointer" }}>Cancelar</button>
+            <button onClick={handleSave} disabled={saving}
+              style={{ flex:2, padding:"11px", background:`linear-gradient(135deg,${T.accent},${T.accent2})`, border:"none", borderRadius:12, color:"#fff", fontSize:14, fontWeight:600, cursor:"pointer" }}>
+              {saving?"Guardando...":"Guardar"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── PROFILE ─────────────────────────────────────────────────────────────────
-function ProfilePage({ onNavigate, userId, onLogout }) {
+function ProfilePage({ onNavigate, userId, viewUserId, onLogout }) {
+  const targetId = viewUserId || userId;
+  const isOwnProfile = targetId === userId;
+
   const [profile, setProfile] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [followStats, setFollowStats] = useState({ followers:0, following:0 });
+  const [isFollowing, setIsFollowing] = useState(false);
   const [tab, setTab] = useState("reseñas");
   const [loading, setLoading] = useState(true);
+  const [showEdit, setShowEdit] = useState(false);
+  const [editingReview, setEditingReview] = useState(null);
 
-  useEffect(() => {
-    if (!userId) return;
-    Promise.all([
-      supabase.from("profiles").select("*").eq("id",userId).single(),
-      supabase.from("feed_reviews").select("*").eq("user_id",userId).order("created_at",{ascending:false}),
-      supabase.from("follows").select("id",{count:"exact"}).eq("following_id",userId),
-      supabase.from("follows").select("id",{count:"exact"}).eq("follower_id",userId),
-    ]).then(([{data:p},{data:r},{count:followers},{count:following}])=>{
-      setProfile(p);
-      setReviews(r||[]);
-      setFollowStats({ followers:followers||0, following:following||0 });
-      setLoading(false);
-    });
-  }, [userId]);
+  const load = async () => {
+    if (!targetId) return;
+    const [{ data:p }, { data:r }, { count:followers }, { count:following }, { data:followCheck }] = await Promise.all([
+      supabase.from("profiles").select("*").eq("id", targetId).single(),
+      supabase.from("feed_reviews").select("*").eq("user_id", targetId).order("created_at", {ascending:false}),
+      supabase.from("follows").select("id", {count:"exact"}).eq("following_id", targetId),
+      supabase.from("follows").select("id", {count:"exact"}).eq("follower_id", targetId),
+      supabase.from("follows").select("id").eq("follower_id", userId).eq("following_id", targetId),
+    ]);
+    setProfile(p);
+    setReviews(r||[]);
+    setFollowStats({ followers:followers||0, following:following||0 });
+    setIsFollowing((followCheck||[]).length > 0);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, [targetId]);
+
+  const toggleFollow = async () => {
+    if (isFollowing) {
+      await supabase.from("follows").delete().eq("follower_id", userId).eq("following_id", targetId);
+      setIsFollowing(false);
+      setFollowStats(s => ({...s, followers: s.followers-1}));
+    } else {
+      await supabase.from("follows").insert({ follower_id: userId, following_id: targetId });
+      setIsFollowing(true);
+      setFollowStats(s => ({...s, followers: s.followers+1}));
+    }
+  };
+
+  const deleteReview = async (reviewId) => {
+    if (!confirm("¿Borrar esta reseña?")) return;
+    await supabase.from("reviews").delete().eq("id", reviewId);
+    setReviews(prev => prev.filter(r => r.id !== reviewId));
+  };
 
   if (loading) return <div style={{ minHeight:"100vh", background:T.bg }}><Spinner/></div>;
 
-  // Derive last 5 albums reviewed
   const lastAlbums = reviews.slice(0,5);
-
-  // Derive top artists as "genres" (since we dont have genres yet, use artists)
   const artistCounts = {};
   reviews.forEach(r => { if(r.artist) artistCounts[r.artist] = (artistCounts[r.artist]||0)+1; });
   const topArtists = Object.entries(artistCounts).sort((a,b)=>b[1]-a[1]).slice(0,4).map(([a])=>a);
-
-  // Favorites = reviews with rating >= 4.5
   const favorites = reviews.filter(r => Number(r.rating) >= 4.5);
 
   return (
@@ -1358,17 +1439,34 @@ function ProfilePage({ onNavigate, userId, onLogout }) {
       {/* Hero gradient */}
       <div style={{ background:`linear-gradient(160deg,${T.accent}33 0%,${T.accent}11 60%,${T.bg} 100%)`, padding:"0 20px" }}>
         <div style={{ maxWidth:560, margin:"0 auto", paddingTop:48, paddingBottom:80 }}>
-          {/* Top row: avatar + logout */}
+          {/* Back button if viewing other profile */}
+          {!isOwnProfile && (
+            <button onClick={()=>onNavigate("feed")} style={{ background:`${T.surface}cc`, border:`1px solid ${T.border}`, borderRadius:20, padding:"6px 14px", color:T.textSub, fontSize:13, cursor:"pointer", display:"flex", alignItems:"center", gap:6, marginBottom:20 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15,18 9,12 15,6"/></svg>
+              Volver
+            </button>
+          )}
+          {/* Top row: avatar + actions */}
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16 }}>
             <div style={{ width:80, height:80, borderRadius:"50%", border:`3px solid ${T.accent}66`, overflow:"hidden", flexShrink:0, boxShadow:`0 0 24px ${T.accent}44` }}>
               <Avatar src={profile?.avatar_url} name={profile?.display_name||profile?.username} size={80}/>
             </div>
-            <button onClick={onLogout} style={{ background:T.surface2, border:`1px solid ${T.border}`, borderRadius:16, padding:"7px 14px", color:T.textSub, fontSize:12, fontWeight:600, cursor:"pointer" }}>Salir</button>
+            <div style={{ display:"flex", gap:8 }}>
+              {isOwnProfile ? (
+                <>
+                  <button onClick={()=>setShowEdit(true)} style={{ background:T.surface2, border:`1px solid ${T.border}`, borderRadius:16, padding:"7px 14px", color:T.textSub, fontSize:12, fontWeight:600, cursor:"pointer" }}>Editar perfil</button>
+                  <button onClick={onLogout} style={{ background:T.surface2, border:`1px solid ${T.border}`, borderRadius:16, padding:"7px 14px", color:T.textSub, fontSize:12, fontWeight:600, cursor:"pointer" }}>Salir</button>
+                </>
+              ) : (
+                <button onClick={toggleFollow}
+                  style={{ background:isFollowing?"none":`linear-gradient(135deg,${T.accent},${T.accent2})`, border:`1.5px solid ${isFollowing?T.border:T.accent}`, borderRadius:20, padding:"8px 20px", color:isFollowing?T.textSub:"#fff", fontSize:13, fontWeight:600, cursor:"pointer", transition:"all 0.15s" }}>
+                  {isFollowing?"Siguiendo":"Seguir"}
+                </button>
+              )}
+            </div>
           </div>
-          {/* Name */}
           <div style={{ fontSize:24, fontWeight:800, color:T.text, lineHeight:1.1 }}>{profile?.display_name||profile?.username}</div>
           <div style={{ fontSize:13, color:T.textSub, marginTop:3 }}>@{profile?.username}</div>
-          {/* Bio */}
           {profile?.bio && <p style={{ fontSize:13, color:T.textSub, marginTop:10, fontStyle:"italic", lineHeight:1.5 }}>"{profile.bio}"</p>}
         </div>
       </div>
@@ -1376,7 +1474,6 @@ function ProfilePage({ onNavigate, userId, onLogout }) {
       {/* Stats card */}
       <div style={{ maxWidth:560, margin:"-56px auto 0", padding:"0 20px", position:"relative", zIndex:2 }}>
         <div style={{ background:T.surface, borderRadius:20, padding:"20px 22px", border:`1px solid ${T.border}`, marginBottom:12 }}>
-          {/* Stats row */}
           <div style={{ display:"flex", marginBottom:16, paddingBottom:16, borderBottom:`1px solid ${T.border}` }}>
             {[
               { label:"reseñas", val:reviews.length },
@@ -1389,7 +1486,6 @@ function ProfilePage({ onNavigate, userId, onLogout }) {
               </div>
             ))}
           </div>
-          {/* Top artists as tags */}
           {topArtists.length > 0 && (
             <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
               {topArtists.map(a => (
@@ -1399,7 +1495,6 @@ function ProfilePage({ onNavigate, userId, onLogout }) {
           )}
         </div>
 
-        {/* Last albums row */}
         {lastAlbums.length > 0 && (
           <div style={{ marginBottom:14 }}>
             <div style={{ fontSize:11, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:10 }}>ÚLTIMOS DISCOS</div>
@@ -1422,7 +1517,6 @@ function ProfilePage({ onNavigate, userId, onLogout }) {
           </div>
         )}
 
-        {/* Tabs */}
         <div style={{ display:"flex", background:T.surface, borderRadius:12, padding:4, marginBottom:14, border:`1px solid ${T.border}`, gap:3 }}>
           {[
             { key:"reseñas", label:`Reseñas (${reviews.length})` },
@@ -1434,12 +1528,27 @@ function ProfilePage({ onNavigate, userId, onLogout }) {
           ))}
         </div>
 
-        {/* Content */}
         <div style={{ display:"flex", flexDirection:"column", gap:12, paddingBottom:40 }}>
           {tab==="reseñas" && (
             reviews.length===0
               ? <div style={{ textAlign:"center", padding:"40px 0", color:T.textMute }}><div style={{ fontSize:28, marginBottom:8 }}>📝</div><div>Todavía no reseñaste nada</div></div>
-              : reviews.map((r,i)=><ReviewCard key={r.id} r={r} i={i} onNavigate={onNavigate}/>)
+              : reviews.map((r,i) => (
+                <div key={r.id} style={{ position:"relative" }}>
+                  <ReviewCard r={r} i={i} onNavigate={onNavigate}/>
+                  {isOwnProfile && (
+                    <div style={{ position:"absolute", top:12, right:12, display:"flex", gap:6 }}>
+                      <button onClick={()=>setEditingReview(r)}
+                        style={{ background:T.surface2, border:`1px solid ${T.border}`, borderRadius:8, padding:"4px 10px", fontSize:11, color:T.textSub, cursor:"pointer" }}>
+                        Editar
+                      </button>
+                      <button onClick={()=>deleteReview(r.id)}
+                        style={{ background:`${T.like}18`, border:`1px solid ${T.like}44`, borderRadius:8, padding:"4px 10px", fontSize:11, color:T.like, cursor:"pointer" }}>
+                        Borrar
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))
           )}
           {tab==="favoritos" && (
             favorites.length===0
@@ -1448,10 +1557,61 @@ function ProfilePage({ onNavigate, userId, onLogout }) {
           )}
         </div>
       </div>
+
+      {showEdit && <EditProfileModal profile={profile} onClose={()=>setShowEdit(false)} onSaved={()=>{ setShowEdit(false); load(); }}/>}
+      {editingReview && <EditReviewModal review={editingReview} onClose={()=>setEditingReview(null)} onSaved={()=>{ setEditingReview(null); load(); }}/>}
     </div>
   );
 }
 
+
+// ─── EDIT REVIEW MODAL ───────────────────────────────────────────────────────
+function EditReviewModal({ review, onClose, onSaved }) {
+  const [text, setText] = useState(review?.text||"");
+  const [rating, setRating] = useState(review?.rating||3);
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    const { error } = await supabase.from("reviews")
+      .update({ text: text.trim(), rating: Number(rating) })
+      .eq("id", review.id);
+    if (!error) onSaved();
+    else alert("Error: " + error.message);
+    setSaving(false);
+  };
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:300, backdropFilter:"blur(8px)", padding:20 }}
+      onClick={e=>{ if(e.target===e.currentTarget) onClose(); }}>
+      <div style={{ background:T.surface, borderRadius:20, width:"100%", maxWidth:460, border:`1px solid ${T.border}`, padding:"24px" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+          <div>
+            <div style={{ fontSize:17, fontWeight:700, color:T.text }}>Editar reseña</div>
+            <div style={{ fontSize:12, color:T.textMute, marginTop:2 }}>{review.album_title}</div>
+          </div>
+          <button onClick={onClose} style={{ background:T.surface2, border:`1px solid ${T.border}`, borderRadius:"50%", width:28, height:28, cursor:"pointer", fontSize:15, color:T.textSub, display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
+        </div>
+        <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+          <div>
+            <div style={{ fontSize:12, color:T.textMute, marginBottom:8 }}>Calificación</div>
+            <HalfStarPicker value={rating} onChange={setRating}/>
+          </div>
+          <textarea value={text} onChange={e=>setText(e.target.value)} rows={5} placeholder="Tu reseña..."
+            style={{ width:"100%", padding:"12px 14px", background:T.surface2, border:`1.5px solid ${T.border}`, borderRadius:12, fontSize:14, color:T.text, outline:"none", fontFamily:"Georgia,serif", resize:"none", lineHeight:1.6 }}
+            onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.border}/>
+          <div style={{ display:"flex", gap:10 }}>
+            <button onClick={onClose} style={{ flex:1, padding:"11px", background:"none", border:`1px solid ${T.border}`, borderRadius:12, color:T.textSub, fontSize:14, cursor:"pointer" }}>Cancelar</button>
+            <button onClick={handleSave} disabled={saving}
+              style={{ flex:2, padding:"11px", background:`linear-gradient(135deg,${T.accent},${T.accent2})`, border:"none", borderRadius:12, color:"#fff", fontSize:14, fontWeight:600, cursor:"pointer" }}>
+              {saving?"Guardando...":"Guardar cambios"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── LISTS ────────────────────────────────────────────────────────────────────
 
@@ -1885,16 +2045,17 @@ export default function Aftertrack() {
         ::-webkit-scrollbar-thumb{background:${T.border};border-radius:4px}
       `}</style>
 
-      {page.name==="feed"     && <FeedPage onNavigate={navigate} onWrite={()=>setModal(true)} refreshKey={feedKey}/>}
+      {page.name==="feed"     && <FeedPage onNavigate={navigate} onWrite={()=>setModal(true)} refreshKey={feedKey} userId={user?.id}/>}
       {page.name==="search"   && <SearchPage onNavigate={navigate} userId={user?.id}/>}
       {page.name==="lists"    && <ListsPage userId={user?.id} onNavigate={navigate}/>}
       {page.name==="notifs"   && <NotifsPage userId={user?.id} onNavigate={navigate}/>}
       {page.name==="profile"  && <ProfilePage onNavigate={navigate} userId={user?.id} onLogout={handleLogout}/>}
+      {page.name==="userprofile" && <ProfilePage onNavigate={navigate} userId={user?.id} viewUserId={page.data} onLogout={handleLogout}/>}
       {page.name==="album"    && <AlbumPage albumId={page.data} onNavigate={navigate} userId={user?.id}/>}
       {page.name==="list"     && <ListDetailPage listId={page.data} onNavigate={navigate}/>}
       {page.name==="autolist" && <AutoListPage list={page.data} onNavigate={navigate}/>}
 
-      {!["album","list","autolist"].includes(page.name) && <BottomNav current={page.name} onNavigate={navigate}/>}
+      {!["album","list","autolist","userprofile"].includes(page.name) && <BottomNav current={page.name} onNavigate={navigate}/>}
       {modal && <WriteModal onClose={()=>setModal(false)} onAdd={()=>{ setModal(false); navigate("feed"); setFeedKey(k=>k+1); }}/>}
     </>
   );
