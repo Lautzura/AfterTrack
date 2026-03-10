@@ -916,59 +916,140 @@ function FeedPage({ onNavigate, onWrite, refreshKey }) {
 }
 
 // ─── SEARCH ───────────────────────────────────────────────────────────────────
-function SearchPage({ onNavigate }) {
+function SearchPage({ onNavigate, userId }) {
+  const [tab, setTab] = useState("albums");
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState([]);
+  const [albumResults, setAlbumResults] = useState([]);
+  const [userResults, setUserResults] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [following, setFollowing] = useState(new Set());
   const debounce = useRef(null);
 
+  // Load who current user follows
   useEffect(() => {
-    if (query.trim().length<2) { setResults([]); return; }
+    if (!userId) return;
+    supabase.from("follows").select("following_id").eq("follower_id", userId)
+      .then(({data}) => setFollowing(new Set((data||[]).map(f=>f.following_id))));
+  }, [userId]);
+
+  useEffect(() => {
+    if (query.trim().length < 2) { setAlbumResults([]); setUserResults([]); return; }
     clearTimeout(debounce.current);
-    debounce.current = setTimeout(async()=>{
+    debounce.current = setTimeout(async () => {
       setLoading(true);
-      const { data } = await supabase.from("albums").select("*").or(`title.ilike.%${query}%,artist.ilike.%${query}%`).limit(10);
-      setResults(data||[]); setLoading(false);
+      const [{ data:albums }, { data:users }] = await Promise.all([
+        supabase.from("albums").select("*").or(`title.ilike.%${query}%,artist.ilike.%${query}%`).limit(10),
+        supabase.from("profiles").select("*").or(`username.ilike.%${query}%,display_name.ilike.%${query}%`).limit(10),
+      ]);
+      setAlbumResults(albums||[]);
+      setUserResults(users||[]);
+      setLoading(false);
     }, 400);
   }, [query]);
 
+  const toggleFollow = async (targetId) => {
+    if (targetId === userId) return;
+    if (following.has(targetId)) {
+      await supabase.from("follows").delete().eq("follower_id", userId).eq("following_id", targetId);
+      setFollowing(prev => { const s=new Set(prev); s.delete(targetId); return s; });
+    } else {
+      await supabase.from("follows").insert({ follower_id: userId, following_id: targetId });
+      setFollowing(prev => new Set([...prev, targetId]));
+    }
+  };
+
+  const tabs = [
+    { key:"albums", label:"Álbumes" },
+    { key:"users",  label:"Usuarios" },
+  ];
+
   return (
     <div style={{ minHeight:"100vh", background:T.bg, paddingBottom:80 }}>
-      <div style={{ background:`${T.bg}ee`, backdropFilter:"blur(16px)", borderBottom:`1px solid ${T.border}`, padding:"16px 20px", position:"sticky", top:0, zIndex:50 }}>
+      <div style={{ background:`${T.bg}ee`, backdropFilter:"blur(16px)", borderBottom:`1px solid ${T.border}`, padding:"16px 20px 0", position:"sticky", top:0, zIndex:50 }}>
         <div style={{ maxWidth:560, margin:"0 auto" }}>
           <div style={{ fontSize:20, fontWeight:800, color:T.text, marginBottom:12 }}>Explorar</div>
-          <div style={{ position:"relative" }}>
+          <div style={{ position:"relative", marginBottom:0 }}>
             <svg style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)", pointerEvents:"none" }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.textMute} strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Buscar álbumes reseñados..."
+            <input value={query} onChange={e=>setQuery(e.target.value)} placeholder={tab==="albums"?"Buscar álbumes...":"Buscar usuarios..."}
               style={{ width:"100%", padding:"11px 14px 11px 38px", background:T.surface2, border:`1.5px solid ${T.border}`, borderRadius:12, fontSize:14, color:T.text, outline:"none", fontFamily:"inherit" }}
               onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.border}/>
           </div>
+          {/* Tabs */}
+          <div style={{ display:"flex", marginTop:12 }}>
+            {tabs.map(t => (
+              <button key={t.key} onClick={()=>setTab(t.key)}
+                style={{ flex:1, padding:"10px 0", background:"none", border:"none", borderBottom:`2px solid ${tab===t.key?T.accent:"transparent"}`, color:tab===t.key?T.accent:T.textMute, fontSize:13, fontWeight:tab===t.key?700:400, cursor:"pointer", transition:"all 0.15s" }}>
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
+
       <div style={{ maxWidth:560, margin:"0 auto", padding:"20px 20px 0" }}>
-        {loading ? <Spinner/> : results.length>0 ? (
-          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-            {results.map(a => {
-              const ac = accentFor(a.id);
-              return (
-                <div key={a.id} onClick={()=>onNavigate("album",a.id)}
-                  style={{ background:T.surface, borderRadius:14, padding:"14px 16px", display:"flex", gap:14, alignItems:"center", cursor:"pointer", border:`1px solid ${T.border}`, transition:"border-color 0.15s" }}
-                  onMouseEnter={e=>e.currentTarget.style.borderColor=T.textMute}
-                  onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
-                  <AlbumCover src={a.cover_url} ac={ac} size={52}/>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontSize:15, fontWeight:700, color:T.text }}>{a.title}</div>
-                    <div style={{ fontSize:13, color:T.textSub }}>{a.artist} · {a.year}</div>
-                  </div>
+        {loading ? <Spinner/> : (
+          <>
+            {/* Albums tab */}
+            {tab==="albums" && (
+              albumResults.length>0 ? (
+                <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                  {albumResults.map(a => {
+                    const ac = accentFor(a.id);
+                    return (
+                      <div key={a.id} onClick={()=>onNavigate("album",a.id)}
+                        style={{ background:T.surface, borderRadius:14, padding:"14px 16px", display:"flex", gap:14, alignItems:"center", cursor:"pointer", border:`1px solid ${T.border}`, transition:"border-color 0.15s" }}
+                        onMouseEnter={e=>e.currentTarget.style.borderColor=T.textMute}
+                        onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+                        <AlbumCover src={a.cover_url} ac={ac} size={52}/>
+                        <div style={{ flex:1 }}>
+                          <div style={{ fontSize:15, fontWeight:700, color:T.text }}>{a.title}</div>
+                          <div style={{ fontSize:13, color:T.textSub }}>{a.artist} · {a.year}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div style={{ textAlign:"center", padding:"48px 0" }}>
-            <div style={{ fontSize:36, marginBottom:10 }}>🔍</div>
-            <div style={{ fontSize:14, color:T.textSub }}>{query.length>=2?"Sin resultados":"Buscá álbumes reseñados"}</div>
-          </div>
+              ) : (
+                <div style={{ textAlign:"center", padding:"48px 0" }}>
+                  <div style={{ fontSize:36, marginBottom:10 }}>🎵</div>
+                  <div style={{ fontSize:14, color:T.textSub }}>{query.length>=2?"Sin resultados":"Buscá álbumes reseñados"}</div>
+                </div>
+              )
+            )}
+
+            {/* Users tab */}
+            {tab==="users" && (
+              userResults.length>0 ? (
+                <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                  {userResults.map(u => {
+                    const isMe = u.id === userId;
+                    const isFollowing = following.has(u.id);
+                    return (
+                      <div key={u.id} style={{ background:T.surface, borderRadius:14, padding:"14px 16px", display:"flex", gap:14, alignItems:"center", border:`1px solid ${T.border}`, animation:"fadeUp 0.3s ease both" }}>
+                        <Avatar src={u.avatar_url} name={u.display_name||u.username} size={48}/>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:15, fontWeight:700, color:T.text }}>{u.display_name||u.username}</div>
+                          <div style={{ fontSize:12, color:T.textSub }}>@{u.username}</div>
+                          {u.bio && <div style={{ fontSize:12, color:T.textMute, marginTop:2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{u.bio}</div>}
+                        </div>
+                        {!isMe && (
+                          <button onClick={()=>toggleFollow(u.id)}
+                            style={{ flexShrink:0, padding:"7px 16px", borderRadius:20, border:`1.5px solid ${isFollowing?T.border:T.accent}`, background:isFollowing?"none":`linear-gradient(135deg,${T.accent},${T.accent2})`, color:isFollowing?T.textSub:"#fff", fontSize:12, fontWeight:600, cursor:"pointer", transition:"all 0.15s" }}>
+                            {isFollowing?"Siguiendo":"Seguir"}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{ textAlign:"center", padding:"48px 0" }}>
+                  <div style={{ fontSize:36, marginBottom:10 }}>👤</div>
+                  <div style={{ fontSize:14, color:T.textSub }}>{query.length>=2?"Sin usuarios encontrados":"Buscá por nombre o usuario"}</div>
+                </div>
+              )
+            )}
+          </>
         )}
       </div>
     </div>
@@ -1770,7 +1851,7 @@ export default function Spinrate() {
       `}</style>
 
       {page.name==="feed"     && <FeedPage onNavigate={navigate} onWrite={()=>setModal(true)} refreshKey={feedKey}/>}
-      {page.name==="search"   && <SearchPage onNavigate={navigate}/>}
+      {page.name==="search"   && <SearchPage onNavigate={navigate} userId={user?.id}/>}
       {page.name==="lists"    && <ListsPage userId={user?.id} onNavigate={navigate}/>}
       {page.name==="notifs"   && <NotifsPage userId={user?.id}/>}
       {page.name==="profile"  && <ProfilePage onNavigate={navigate} userId={user?.id} onLogout={handleLogout}/>}
