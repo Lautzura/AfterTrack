@@ -426,7 +426,12 @@ function WriteModal({ onClose, onAdd }) {
   const [coverErr, setCoverErr] = useState(false);
   const [rating, setRating] = useState(0);
   const [text, setText] = useState("");
+  const [tags, setTags] = useState([]);
+  const [tagInput, setTagInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const SUGGESTED_TAGS = ["rock","pop","jazz","hip-hop","electronica","indie","metal","clasica","reggae","folk","soul","punk","alternativo","ambient"];
+  const addTag = (tag) => { const t=tag.toLowerCase().trim(); if(t&&!tags.includes(t)&&tags.length<5) setTags(p=>[...p,t]); setTagInput(""); };
+  const removeTag = (tag) => setTags(p=>p.filter(t=>t!==tag));
   const debounce = useRef(null);
 
   useEffect(() => {
@@ -809,6 +814,7 @@ function ReviewCard({ r, i, onNavigate }) {
   const ac = accentFor(r.album_id);
   const [liked, setLiked] = useState(false);
   const [likes, setLikes] = useState(Number(r.like_count)||0);
+  const [likeAnim, setLikeAnim] = useState(false);
   const [trackReviews, setTrackReviews] = useState(null);
   const [showComments, setShowComments] = useState(false);
   const [showShare, setShowShare] = useState(false);
@@ -826,21 +832,27 @@ function ReviewCard({ r, i, onNavigate }) {
   const toggleLike = async () => {
     try {
       if (liked) { await supabase.from("likes").delete().eq("review_id",r.id); setLikes(l=>l-1); }
-      else { await supabase.from("likes").insert({ review_id:r.id }); setLikes(l=>l+1); }
+      else {
+        await supabase.from("likes").insert({ review_id:r.id }); setLikes(l=>l+1);
+        setLikeAnim(true); setTimeout(()=>setLikeAnim(false), 600);
+      }
       setLiked(!liked);
     } catch {}
   };
 
   return (
     <>
+      <style>{`@keyframes likepop{0%{transform:scale(1)}40%{transform:scale(1.6)}100%{transform:scale(1)}} @keyframes likefloat{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-36px)}}`}</style>
       <div style={{ background:T.surface, borderRadius:16, padding:"20px", border:`1px solid ${T.border}`, animation:`fadeUp 0.4s ease ${i*0.07}s both`, transition:"border-color 0.2s" }}
         onMouseEnter={e=>e.currentTarget.style.borderColor=T.textMute}
         onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
         {/* Header */}
         <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
-          <Avatar src={r.avatar_url} name={r.display_name||r.username} size={36}/>
+          <div onClick={()=>onNavigate("userprofile", r.user_id)} style={{ cursor:"pointer" }}>
+            <Avatar src={r.avatar_url} name={r.display_name||r.username} size={36}/>
+          </div>
           <div style={{ flex:1 }}>
-            <span style={{ fontSize:14, fontWeight:600, color:T.text }}>{r.display_name||r.username}</span>
+            <span onClick={()=>onNavigate("userprofile", r.user_id)} style={{ fontSize:14, fontWeight:600, color:T.text, cursor:"pointer" }}>{r.display_name||r.username}</span>
             <span style={{ fontSize:12, color:T.textMute, marginLeft:5 }}>@{r.username}</span>
           </div>
           <span style={{ fontSize:11, color:T.textMute }}>{timeAgo(r.created_at)}</span>
@@ -857,7 +869,10 @@ function ReviewCard({ r, i, onNavigate }) {
           <div style={{ flex:1, padding:"12px 14px", display:"flex", flexDirection:"column", minWidth:0 }}>
             <div style={{ marginBottom:8 }}>
               <div style={{ fontSize:16, fontWeight:700, color:T.text, lineHeight:1.2, marginBottom:2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{r.album_title}</div>
-              <div style={{ fontSize:12, color:T.textSub, marginBottom:6 }}>{r.artist} · {r.year}</div>
+              <div style={{ fontSize:12, marginBottom:6 }}>
+                <span onClick={e=>{ e.stopPropagation(); onNavigate("artist", r.artist); }} style={{ color:T.accent, cursor:"pointer", fontWeight:500 }}>{r.artist}</span>
+                <span style={{ color:T.textSub }}> · {r.year}</span>
+              </div>
               <RatingDisplay n={r.rating} size={13}/>
             </div>
             {trackReviews && trackReviews.length > 0 && (
@@ -880,10 +895,13 @@ function ReviewCard({ r, i, onNavigate }) {
         {/* Actions */}
         <div style={{ borderTop:`1px solid ${T.border}`, paddingTop:12, display:"flex", gap:4, alignItems:"center" }}>
           {/* Like */}
-          <button onClick={toggleLike} style={{ display:"flex", alignItems:"center", gap:5, background:liked?`${T.like}18`:"none", border:"none", borderRadius:8, padding:"6px 10px", cursor:"pointer", color:liked?T.like:T.textMute, fontSize:13, transition:"all 0.15s" }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill={liked?T.like:"none"} stroke="currentColor" strokeWidth="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-            {likes}
-          </button>
+          <div style={{ position:"relative" }}>
+            {likeAnim && <div style={{ position:"absolute", top:-4, left:"50%", transform:"translateX(-50%)", fontSize:14, pointerEvents:"none", animation:"likefloat 0.6s ease forwards" }}>❤️</div>}
+            <button onClick={toggleLike} style={{ display:"flex", alignItems:"center", gap:5, background:liked?`${T.like}18`:"none", border:"none", borderRadius:8, padding:"6px 10px", cursor:"pointer", color:liked?T.like:T.textMute, fontSize:13, transition:"all 0.15s" }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill={liked?T.like:"none"} stroke="currentColor" strokeWidth="2" style={{ animation:likeAnim?"likepop 0.5s ease":"none" }}><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+              {likes}
+            </button>
+          </div>
           {/* Comment */}
           <button onClick={()=>setShowComments(true)} style={{ display:"flex", alignItems:"center", gap:5, background:"none", border:"none", borderRadius:8, padding:"6px 10px", cursor:"pointer", color:T.textMute, fontSize:13, transition:"all 0.15s" }}
             onMouseEnter={e=>e.currentTarget.style.color=T.accent} onMouseLeave={e=>e.currentTarget.style.color=T.textMute}>
@@ -1362,6 +1380,27 @@ function AlbumPage({ albumId, onNavigate, userId }) {
   );
 }
 
+function FollowStatsRow({ reviews, followStats, targetId, onNavigate }) {
+  const [showFollowers, setShowFollowers] = useState(null);
+  return (
+    <>
+      <div style={{ display:"flex", marginBottom:16, paddingBottom:16, borderBottom:`1px solid ${T.border}` }}>
+        {[
+          { label:"reseñas", val:reviews.length, action:null },
+          { label:"seguidores", val:followStats.followers, action:()=>setShowFollowers("followers") },
+          { label:"siguiendo", val:followStats.following, action:()=>setShowFollowers("following") },
+        ].map((s,i)=>(
+          <div key={i} onClick={s.action||undefined} style={{ flex:1, textAlign:"center", borderRight:i<2?`1px solid ${T.border}`:"none", cursor:s.action?"pointer":"default" }}>
+            <div style={{ fontSize:20, fontWeight:800, color:T.text }}>{s.val}</div>
+            <div style={{ fontSize:11, color:s.action?T.accent:T.textMute, marginTop:1 }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+      {showFollowers && <FollowersModal userId={targetId} mode={showFollowers} onClose={()=>setShowFollowers(null)} onNavigate={onNavigate}/>}
+    </>
+  );
+}
+
 // ─── EDIT PROFILE MODAL ──────────────────────────────────────────────────────
 function EditProfileModal({ profile, onClose, onSaved }) {
   const [displayName, setDisplayName] = useState(profile?.display_name||"");
@@ -1519,18 +1558,7 @@ function ProfilePage({ onNavigate, userId, viewUserId, onLogout }) {
       {/* Stats card */}
       <div style={{ maxWidth:560, margin:"-56px auto 0", padding:"0 20px", position:"relative", zIndex:2 }}>
         <div style={{ background:T.surface, borderRadius:20, padding:"20px 22px", border:`1px solid ${T.border}`, marginBottom:12 }}>
-          <div style={{ display:"flex", marginBottom:16, paddingBottom:16, borderBottom:`1px solid ${T.border}` }}>
-            {[
-              { label:"reseñas", val:reviews.length },
-              { label:"seguidores", val:followStats.followers },
-              { label:"siguiendo", val:followStats.following },
-            ].map((s,i) => (
-              <div key={i} style={{ flex:1, textAlign:"center", borderRight: i<2?`1px solid ${T.border}`:"none" }}>
-                <div style={{ fontSize:20, fontWeight:800, color:T.text }}>{s.val}</div>
-                <div style={{ fontSize:11, color:T.textMute, marginTop:1 }}>{s.label}</div>
-              </div>
-            ))}
-          </div>
+          <FollowStatsRow reviews={reviews} followStats={followStats} targetId={targetId} onNavigate={onNavigate}/>
           {topArtists.length > 0 && (
             <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
               {topArtists.map(a => (
@@ -1653,6 +1681,138 @@ function EditReviewModal({ review, onClose, onSaved }) {
             </button>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── FOLLOWERS MODAL ─────────────────────────────────────────────────────────
+function FollowersModal({ userId, mode, onClose, onNavigate }) {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const isFollowers = mode === "followers";
+    supabase.from("follows")
+      .select(isFollowers ? "follower:profiles!follows_follower_id_fkey(id,username,display_name,avatar_url,bio)" : "following:profiles!follows_following_id_fkey(id,username,display_name,avatar_url,bio)")
+      .eq(isFollowers ? "following_id" : "follower_id", userId)
+      .then(({data}) => {
+        setUsers((data||[]).map(d=>isFollowers?d.follower:d.following).filter(Boolean));
+        setLoading(false);
+      });
+  }, [userId, mode]);
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:300, backdropFilter:"blur(8px)" }}
+      onClick={e=>{ if(e.target===e.currentTarget) onClose(); }}>
+      <div style={{ background:T.surface, borderRadius:"20px 20px 0 0", width:"100%", maxWidth:560, border:`1px solid ${T.border}`, borderBottom:"none", maxHeight:"70vh", display:"flex", flexDirection:"column" }}>
+        <div style={{ display:"flex", justifyContent:"center", padding:"12px 0 0" }}><div style={{ width:36, height:4, borderRadius:2, background:T.border }}/></div>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 20px" }}>
+          <div style={{ fontSize:16, fontWeight:700, color:T.text }}>{mode==="followers"?"Seguidores":"Siguiendo"}</div>
+          <button onClick={onClose} style={{ background:T.surface2, border:`1px solid ${T.border}`, borderRadius:"50%", width:28, height:28, cursor:"pointer", fontSize:15, color:T.textSub, display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
+        </div>
+        <div style={{ flex:1, overflowY:"auto", padding:"0 20px 20px" }}>
+          {loading ? <Spinner/> : users.length===0 ? (
+            <div style={{ textAlign:"center", padding:"32px 0", color:T.textMute }}>{mode==="followers"?"Sin seguidores aún":"No sigue a nadie aún"}</div>
+          ) : users.map(u=>(
+            <div key={u.id} onClick={()=>{ onClose(); onNavigate("userprofile",u.id); }}
+              style={{ display:"flex", gap:12, alignItems:"center", padding:"12px 0", borderBottom:`1px solid ${T.border}`, cursor:"pointer" }}>
+              <Avatar src={u.avatar_url} name={u.display_name||u.username} size={42}/>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:14, fontWeight:600, color:T.text }}>{u.display_name||u.username}</div>
+                <div style={{ fontSize:12, color:T.textSub }}>@{u.username}</div>
+              </div>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textMute} strokeWidth="2"><polyline points="9,18 15,12 9,6"/></svg>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── ARTIST PAGE ──────────────────────────────────────────────────────────────
+function ArtistPage({ artist, onNavigate }) {
+  const [albums, setAlbums] = useState([]);
+  const [reviews, setReviews] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState("albums");
+  useEffect(() => {
+    if (!artist) return;
+    Promise.all([
+      supabase.from("albums").select("*").ilike("artist", artist).order("year",{ascending:false}),
+      supabase.from("feed_reviews").select("*").ilike("artist", artist).order("created_at",{ascending:false}).limit(30),
+    ]).then(([{data:a},{data:r}]) => { setAlbums(a||[]); setReviews(r||[]); setLoading(false); });
+  }, [artist]);
+  const avgRating = reviews.length>0 ? (reviews.reduce((s,r)=>s+Number(r.rating),0)/reviews.length).toFixed(1) : null;
+  return (
+    <div style={{ minHeight:"100vh", background:T.bg, paddingBottom:80 }}>
+      <div style={{ background:`linear-gradient(160deg,${T.accent}22 0%,${T.bg} 100%)`, padding:"20px 20px 0", borderBottom:`1px solid ${T.border}` }}>
+        <div style={{ maxWidth:560, margin:"0 auto", paddingTop:16, paddingBottom:40 }}>
+          <button onClick={()=>onNavigate("feed")} style={{ background:`${T.surface}cc`, border:`1px solid ${T.border}`, borderRadius:20, padding:"6px 14px", color:T.textSub, fontSize:13, cursor:"pointer", display:"flex", alignItems:"center", gap:6, marginBottom:20 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15,18 9,12 15,6"/></svg>
+            Volver
+          </button>
+          <div style={{ fontSize:32, fontWeight:800, color:T.text, marginBottom:6 }}>{artist}</div>
+          <div style={{ display:"flex", gap:16, fontSize:13, color:T.textSub }}>
+            <span>{albums.length} álbum{albums.length!==1?"es":""} reseñado{albums.length!==1?"s":""}</span>
+            {avgRating && <span>⭐ {avgRating} promedio</span>}
+          </div>
+        </div>
+      </div>
+      <div style={{ maxWidth:560, margin:"0 auto", padding:"16px 20px 0" }}>
+        <div style={{ display:"flex", background:T.surface, borderRadius:12, padding:4, marginBottom:16, border:`1px solid ${T.border}`, gap:3 }}>
+          {[{key:"albums",label:`Álbumes (${albums.length})`},{key:"reviews",label:`Reseñas (${reviews.length})`}].map(t=>(
+            <button key={t.key} onClick={()=>setTab(t.key)} style={{ flex:1, padding:"8px", border:"none", borderRadius:9, cursor:"pointer", background:tab===t.key?`linear-gradient(135deg,${T.accent},${T.accent2})`:"none", color:tab===t.key?"#fff":T.textSub, fontSize:13, fontWeight:tab===t.key?600:400 }}>{t.label}</button>
+          ))}
+        </div>
+        {loading ? <Spinner/> : tab==="albums" ? (
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            {albums.map((a,i)=>{ const ac=accentFor(a.id); const n=reviews.filter(r=>r.album_id===a.id).length;
+              return (<div key={a.id} onClick={()=>onNavigate("album",a.id)} style={{ background:T.surface, borderRadius:14, padding:"12px 14px", display:"flex", gap:12, alignItems:"center", cursor:"pointer", border:`1px solid ${T.border}`, animation:`fadeUp 0.3s ease ${i*0.05}s both` }} onMouseEnter={e=>e.currentTarget.style.borderColor=T.textMute} onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+                <AlbumCover src={a.cover_url} ac={ac} size={56}/>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:14, fontWeight:700, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{a.title}</div>
+                  <div style={{ fontSize:12, color:T.textSub }}>{a.year}</div>
+                </div>
+                {n>0 && <div style={{ fontSize:11, color:T.textMute, flexShrink:0 }}>{n} reseña{n!==1?"s":""}</div>}
+              </div>);
+            })}
+          </div>
+        ) : (
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            {reviews.map((r,i)=><ReviewCard key={r.id} r={r} i={i} onNavigate={onNavigate}/>)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── TAG PAGE ─────────────────────────────────────────────────────────────────
+function TagPage({ tag, onNavigate }) {
+  const [reviews, setReviews] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    if (!tag) return;
+    supabase.from("feed_reviews").select("*").contains("tags",[tag]).order("created_at",{ascending:false}).limit(40)
+      .then(({data})=>{ setReviews(data||[]); setLoading(false); });
+  }, [tag]);
+  return (
+    <div style={{ minHeight:"100vh", background:T.bg, paddingBottom:80 }}>
+      <div style={{ background:`${T.bg}ee`, backdropFilter:"blur(16px)", borderBottom:`1px solid ${T.border}`, position:"sticky", top:0, zIndex:50 }}>
+        <div style={{ maxWidth:560, margin:"0 auto", padding:"16px 20px", display:"flex", alignItems:"center", gap:12 }}>
+          <button onClick={()=>onNavigate("feed")} style={{ background:T.surface2, border:`1px solid ${T.border}`, borderRadius:"50%", width:32, height:32, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textSub} strokeWidth="2.5"><polyline points="15,18 9,12 15,6"/></svg>
+          </button>
+          <div>
+            <div style={{ fontSize:18, fontWeight:800, color:T.text }}>#{tag}</div>
+            <div style={{ fontSize:12, color:T.textMute }}>{reviews.length} reseña{reviews.length!==1?"s":""}</div>
+          </div>
+        </div>
+      </div>
+      <div style={{ maxWidth:560, margin:"0 auto", padding:"16px 20px" }}>
+        {loading ? <Spinner/> : reviews.length===0 ? (
+          <div style={{ textAlign:"center", padding:"48px 0" }}><div style={{ fontSize:32, marginBottom:8 }}>🏷️</div><div style={{ fontSize:14, color:T.textSub }}>Sin reseñas con este tag aún</div></div>
+        ) : <div style={{ display:"flex", flexDirection:"column", gap:10 }}>{reviews.map((r,i)=><ReviewCard key={r.id} r={r} i={i} onNavigate={onNavigate}/>)}</div>}
       </div>
     </div>
   );
@@ -2096,11 +2256,13 @@ export default function Aftertrack() {
       {page.name==="notifs"   && <NotifsPage userId={user?.id} onNavigate={navigate}/>}
       {page.name==="profile"  && <ProfilePage onNavigate={navigate} userId={user?.id} onLogout={handleLogout}/>}
       {page.name==="userprofile" && <ProfilePage onNavigate={navigate} userId={user?.id} viewUserId={page.data} onLogout={handleLogout}/>}
+      {page.name==="artist"      && <ArtistPage artist={page.data} onNavigate={navigate}/>}
+      {page.name==="tag"         && <TagPage tag={page.data} onNavigate={navigate}/>}
       {page.name==="album"    && <AlbumPage albumId={page.data} onNavigate={navigate} userId={user?.id}/>}
       {page.name==="list"     && <ListDetailPage listId={page.data} onNavigate={navigate}/>}
       {page.name==="autolist" && <AutoListPage list={page.data} onNavigate={navigate}/>}
 
-      {!["album","list","autolist","userprofile"].includes(page.name) && <BottomNav current={page.name} onNavigate={navigate}/>}
+      {!["album","list","autolist","userprofile","artist","tag"].includes(page.name) && <BottomNav current={page.name} onNavigate={navigate}/>}
       {modal && <WriteModal onClose={()=>setModal(false)} onAdd={()=>{ setModal(false); navigate("feed"); setFeedKey(k=>k+1); }}/>}
     </>
   );
