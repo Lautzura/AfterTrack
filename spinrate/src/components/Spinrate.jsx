@@ -287,26 +287,62 @@ function AuthPage({ onAuth }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState({ text:"", ok:false });
+  const [usernameStatus, setUsernameStatus] = useState(null); // null | "checking" | "available" | "taken"
+  const usernameDebounce = useRef(null);
 
   const inp = { width:"100%", padding:"12px 14px", background:T.surface2, border:`1.5px solid ${T.border}`, borderRadius:12, fontSize:14, color:T.text, outline:"none", fontFamily:"inherit" };
 
+  // Check username availability
+  const checkUsername = (val) => {
+    setUsername(val);
+    if (val.length < 3) { setUsernameStatus(null); return; }
+    setUsernameStatus("checking");
+    clearTimeout(usernameDebounce.current);
+    usernameDebounce.current = setTimeout(async () => {
+      const { data } = await supabase.from("profiles").select("id").eq("username", val.toLowerCase().trim()).limit(1);
+      setUsernameStatus(data && data.length > 0 ? "taken" : "available");
+    }, 500);
+  };
+
   const handleSubmit = async () => {
-    setMsg({text:"",ok:false}); setLoading(true);
+    setMsg({text:"",ok:false});
+    if (mode==="signup") {
+      if (!username.trim() || username.trim().length < 3) return setMsg({ text:"El usuario debe tener al menos 3 caracteres", ok:false });
+      if (usernameStatus === "taken") return setMsg({ text:"Ese usuario ya está en uso", ok:false });
+      if (!password || password.length < 6) return setMsg({ text:"La contraseña debe tener al menos 6 caracteres", ok:false });
+    }
+    setLoading(true);
     try {
       if (mode==="login") {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
         onAuth(data.session, data.user);
       } else {
-        const { error } = await supabase.auth.signUp({ email, password, options:{ data:{ username, display_name:username } } });
+        const uname = username.toLowerCase().trim();
+        const { data, error } = await supabase.auth.signUp({
+          email, password,
+          options:{ data:{ username: uname, display_name: displayName.trim() || uname } }
+        });
         if (error) throw error;
+        // Also update profile directly
+        if (data?.user) {
+          await supabase.from("profiles").upsert({
+            id: data.user.id,
+            username: uname,
+            display_name: displayName.trim() || uname,
+          });
+        }
         setMode("login"); setMsg({ text:"¡Cuenta creada! Iniciá sesión.", ok:true });
       }
     } catch(e) { setMsg({ text:e.message, ok:false }); }
     setLoading(false);
   };
+
+  const usernameColor = usernameStatus==="available" ? "#4db6ac" : usernameStatus==="taken" ? T.like : T.textMute;
+  const usernameHint = usernameStatus==="checking" ? "Verificando..." : usernameStatus==="available" ? "✓ Disponible" : usernameStatus==="taken" ? "✗ Ya está en uso" : "";
 
   return (
     <div style={{ minHeight:"100vh", background:`linear-gradient(160deg,#0f1117 0%,#1a1040 100%)`, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
@@ -317,14 +353,23 @@ function AuthPage({ onAuth }) {
           <div style={{ fontSize:13, color:T.textSub, marginTop:4 }}>{mode==="login"?"Iniciá sesión":"Creá tu cuenta gratis"}</div>
         </div>
         <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-          {mode==="signup" && <input placeholder="Nombre de usuario" value={username} onChange={e=>setUsername(e.target.value)} style={inp}/>}
+          {mode==="signup" && (
+            <>
+              <div>
+                <input placeholder="Nombre de usuario *" value={username} onChange={e=>checkUsername(e.target.value)} style={{...inp, borderColor: usernameStatus==="taken"?T.like:usernameStatus==="available"?"#4db6ac":T.border}}/>
+                {usernameHint && <div style={{ fontSize:11, color:usernameColor, marginTop:4, paddingLeft:4 }}>{usernameHint}</div>}
+              </div>
+              <input placeholder="Nombre para mostrar (opcional)" value={displayName} onChange={e=>setDisplayName(e.target.value)} style={inp}/>
+            </>
+          )}
           <input placeholder="Email" type="email" value={email} onChange={e=>setEmail(e.target.value)} style={inp}/>
           <input placeholder="Contraseña" type="password" value={password} onChange={e=>setPassword(e.target.value)} style={inp} onKeyDown={e=>e.key==="Enter"&&handleSubmit()}/>
           {msg.text && <div style={{ fontSize:13, color:msg.ok?"#4db6ac":T.like, background:msg.ok?"#4db6ac15":"#f0629215", borderRadius:8, padding:"8px 12px" }}>{msg.text}</div>}
-          <button onClick={handleSubmit} disabled={loading} style={{ padding:"13px", background:`linear-gradient(135deg,${T.accent},${T.accent2})`, border:"none", borderRadius:12, color:"#fff", fontSize:15, fontWeight:600, cursor:"pointer", opacity:loading?0.7:1 }}>
+          <button onClick={handleSubmit} disabled={loading||(mode==="signup"&&usernameStatus==="taken")}
+            style={{ padding:"13px", background:`linear-gradient(135deg,${T.accent},${T.accent2})`, border:"none", borderRadius:12, color:"#fff", fontSize:15, fontWeight:600, cursor:"pointer", opacity:(loading||(mode==="signup"&&usernameStatus==="taken"))?0.6:1, marginTop:4 }}>
             {loading?"...":(mode==="login"?"Entrar":"Crear cuenta")}
           </button>
-          <button onClick={()=>{ setMode(mode==="login"?"signup":"login"); setMsg({text:"",ok:false}); }} style={{ background:"none", border:"none", color:T.accent, fontSize:13, fontWeight:600, cursor:"pointer" }}>
+          <button onClick={()=>{ setMode(mode==="login"?"signup":"login"); setMsg({text:"",ok:false}); setUsernameStatus(null); }} style={{ background:"none", border:"none", color:T.accent, fontSize:13, fontWeight:600, cursor:"pointer" }}>
             {mode==="login"?"¿No tenés cuenta? Registrate":"¿Ya tenés cuenta? Iniciá sesión"}
           </button>
         </div>
