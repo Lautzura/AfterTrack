@@ -103,7 +103,7 @@ function PlayButton({ previewUrl, size=32 }) {
 // ─── MUSICBRAINZ ─────────────────────────────────────────────────────────────
 async function searchMusicBrainz(query) {
   try {
-    const res = await fetch(`https://musicbrainz.org/ws/2/release-group/?query=${encodeURIComponent(query)}&type=album&limit=6&fmt=json`, { headers:{"User-Agent":"Spinrate/1.0"} });
+    const res = await fetch(`https://musicbrainz.org/ws/2/release-group/?query=${encodeURIComponent(query)}&type=album&limit=6&fmt=json`, { headers:{"User-Agent":"Aftertrack/1.0"} });
     const data = await res.json();
     const results = (data["release-groups"]||[]).map(rg => ({
       mbid: rg.id, title: rg.title,
@@ -143,11 +143,11 @@ async function resolveAlbumFull(mbid, artist="", title="") {
 async function fetchTracklist(mbid) {
   try {
     // Get releases for this release-group, pick first
-    const res1 = await fetch(`https://musicbrainz.org/ws/2/release?release-group=${mbid}&limit=1&fmt=json`, { headers:{"User-Agent":"Spinrate/1.0"} });
+    const res1 = await fetch(`https://musicbrainz.org/ws/2/release?release-group=${mbid}&limit=1&fmt=json`, { headers:{"User-Agent":"Aftertrack/1.0"} });
     const d1 = await res1.json();
     const releaseId = d1.releases?.[0]?.id;
     if (!releaseId) return [];
-    const res2 = await fetch(`https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings&fmt=json`, { headers:{"User-Agent":"Spinrate/1.0"} });
+    const res2 = await fetch(`https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings&fmt=json`, { headers:{"User-Agent":"Aftertrack/1.0"} });
     const d2 = await res2.json();
     const tracks = d2.media?.[0]?.tracks || [];
     return tracks.map((t,i) => ({ number: t.position||i+1, title: t.title, length: t.length }));
@@ -313,7 +313,7 @@ function AuthPage({ onAuth }) {
       <div style={{ background:T.surface, borderRadius:24, padding:"36px 32px", width:"100%", maxWidth:400, boxShadow:"0 24px 60px rgba(0,0,0,0.5)", border:`1px solid ${T.border}` }}>
         <div style={{ textAlign:"center", marginBottom:28 }}>
           <div style={{ width:52, height:52, borderRadius:16, background:`linear-gradient(135deg,${T.accent},${T.accent2})`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:26, margin:"0 auto 14px", boxShadow:`0 8px 24px ${T.accent}44` }}>♪</div>
-          <div style={{ fontSize:26, fontWeight:800, color:T.text }}>spinrate</div>
+          <div style={{ fontSize:26, fontWeight:800, color:T.text }}>aftertrack</div>
           <div style={{ fontSize:13, color:T.textSub, marginTop:4 }}>{mode==="login"?"Iniciá sesión":"Creá tu cuenta gratis"}</div>
         </div>
         <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
@@ -708,7 +708,7 @@ function CommentsModal({ review, onClose }) {
 // ─── SHARE MODAL ─────────────────────────────────────────────────────────────
 function ShareModal({ review, onClose }) {
   const url = `${window.location.origin}?album=${review.album_id}`;
-  const text = `${review.display_name||review.username} reseñó "${review.album_title}" de ${review.artist} en Spinrate`;
+  const text = `${review.display_name||review.username} reseñó "${review.album_title}" de ${review.artist} en Aftertrack`;
   const [copied, setCopied] = useState(false);
 
   const copyLink = () => {
@@ -882,7 +882,7 @@ function FeedPage({ onNavigate, onWrite, refreshKey }) {
           <div style={{ height:52, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
             <div style={{ display:"flex", alignItems:"center", gap:8 }}>
               <div style={{ width:32, height:32, borderRadius:9, background:`linear-gradient(135deg,${T.accent},${T.accent2})`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16 }}>♪</div>
-              <span style={{ fontSize:18, fontWeight:800, color:T.text }}>spinrate</span>
+              <span style={{ fontSize:18, fontWeight:800, color:T.text }}>aftertrack</span>
             </div>
             <button onClick={onWrite} style={{ background:`linear-gradient(135deg,${T.accent},${T.accent2})`, border:"none", borderRadius:20, padding:"8px 18px", color:"#fff", fontSize:13, fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", gap:5 }}>
               <span style={{ fontSize:16 }}>+</span> Reseñar
@@ -1852,7 +1852,7 @@ function AutoListPage({ list, onNavigate }) {
 }
 
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
-export default function Spinrate() {
+export default function Aftertrack() {
   const [session, setSession] = useState(null);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
