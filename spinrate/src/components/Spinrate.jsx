@@ -3,18 +3,13 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 
 // ─── THEME ────────────────────────────────────────────────────────────────────
-const T = {
-  bg:       "#0f1117",
-  surface:  "#181c27",
-  surface2: "#1e2333",
-  border:   "#2a2f45",
-  text:     "#e8eaf0",
-  textSub:  "#7b82a0",
-  textMute: "#4a5070",
-  accent:   "#7c6fff",
-  accent2:  "#a78bfa",
-  like:     "#f06292",
+const THEMES = {
+  dark:  { bg:"#0f1117", surface:"#181c27", surface2:"#1e2333", border:"#2a2f45", text:"#e8eaf0", textSub:"#7b82a0", textMute:"#4a5070", accent:"#7c6fff", accent2:"#a78bfa", like:"#f06292" },
+  light: { bg:"#f4f5f9", surface:"#ffffff", surface2:"#eef0f7", border:"#dde0ee", text:"#1a1d2e", textSub:"#5a6080", textMute:"#9aa0be", accent:"#6c5ce7", accent2:"#8b77fa", like:"#e91e80" },
 };
+// T is a mutable object so all components always read the current theme
+const T = { ...THEMES.dark };
+function setTheme(mode) { Object.assign(T, THEMES[mode]); try { localStorage.setItem("aftertrack_theme", mode); } catch {} }
 
 const ACCENTS = ["#7c6fff","#4fc3f7","#f06292","#4db6ac","#ffb347","#a78bfa","#81d4fa"];
 function accentFor(seed) {
@@ -931,6 +926,14 @@ function FeedPage({ onNavigate, onWrite, refreshKey, userId }) {
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ genre:null, minRating:null, year:null });
+  const [isDark, setIsDark] = useState(true);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("aftertrack_theme") || "dark";
+      setTheme(saved); setIsDark(saved==="dark");
+    } catch {}
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -959,8 +962,8 @@ function FeedPage({ onNavigate, onWrite, refreshKey, userId }) {
               <span style={{ fontSize:18, fontWeight:800, color:T.text }}>aftertrack</span>
             </div>
             <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-              <button onClick={()=>{ applyTheme(!_darkMode); window.location.reload(); }} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:20, padding:"6px 10px", color:T.textSub, fontSize:14, cursor:"pointer" }} title="Cambiar tema">
-                {_darkMode ? "☀️" : "🌙"}
+              <button onClick={()=>{ const next = isDark?"light":"dark"; setTheme(next); setIsDark(next==="dark"); }} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:20, padding:"6px 10px", color:T.textSub, fontSize:14, cursor:"pointer" }} title="Cambiar tema">
+                {isDark ? "☀️" : "🌙"}
               </button>
               <button onClick={onWrite} style={{ background:`linear-gradient(135deg,${T.accent},${T.accent2})`, border:"none", borderRadius:20, padding:"8px 18px", color:"#fff", fontSize:13, fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", gap:5 }}>
                 <span style={{ fontSize:16 }}>+</span> Reseñar
