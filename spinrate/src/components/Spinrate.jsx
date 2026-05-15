@@ -95,58 +95,48 @@ function PlayButton({ previewUrl, size=32 }) {
   );
 }
 
-// ─── MUSICBRAINZ ─────────────────────────────────────────────────────────────
-async function searchMusicBrainz(query) {
+// ─── SPOTIFY ──────────────────────────────────────────────────────────────────
+async function searchSpotify(query) {
   try {
-    const res = await fetch(`https://musicbrainz.org/ws/2/release-group/?query=${encodeURIComponent(query)}&type=album&limit=6&fmt=json`, { headers:{"User-Agent":"Aftertrack/1.0"} });
+    const res  = await fetch(`/api/spotify?type=search&q=${encodeURIComponent(query)}`);
+    if (!res.ok) return [];
     const data = await res.json();
-    const results = (data["release-groups"]||[]).map(rg => ({
-      mbid: rg.id, title: rg.title,
-      artist: rg["artist-credit"]?.[0]?.name||"Desconocido",
-      year: rg["first-release-date"]?.slice(0,4)||"—",
-      cover: null,
-    }));
-    // Resolve covers via proxy (in parallel, best effort)
-    await Promise.all(results.map(async r => {
-      const cover = await resolveCoverUrl(r.mbid, r.artist, r.title);
-      if (cover) r.cover = cover;
-    }));
-    return results;
+    return data.albums || [];
   } catch { return []; }
 }
 
-async function resolveCoverUrl(mbid, artist="", title="") {
+async function fetchSpotifyAlbum(spotifyId) {
+  // Returns { coverUrl, previewUrl, tracklist, genres, label, spotifyUrl }
   try {
-    const params = new URLSearchParams({ mbid, artist, title, mode:"album" });
-    const res = await fetch(`/api/cover?${params}`);
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data.url || null;
-  } catch { return null; }
-}
-
-async function resolveAlbumFull(mbid, artist="", title="") {
-  // Returns { coverUrl, previewUrl, trackPreviews }
-  try {
-    const params = new URLSearchParams({ mbid, artist, title, mode:"album" });
-    const res = await fetch(`/api/cover?${params}`);
+    const res  = await fetch(`/api/spotify?type=album&id=${spotifyId}`);
     if (!res.ok) return {};
     return await res.json();
   } catch { return {}; }
 }
 
+async function fetchSpotifyArtistAlbums(artistName) {
+  // Returns { albums, artistInfo }
+  try {
+    const res  = await fetch(`/api/spotify?type=artist&q=${encodeURIComponent(artistName)}`);
+    if (!res.ok) return { albums: [], artistInfo: null };
+    return await res.json();
+  } catch { return { albums: [], artistInfo: null }; }
+}
+
+// Mantener compatibilidad: fetchTracklist ahora usa Spotify
 async function fetchTracklist(mbid) {
   try {
-    // Get releases for this release-group, pick first
-    const res1 = await fetch(`https://musicbrainz.org/ws/2/release?release-group=${mbid}&limit=1&fmt=json`, { headers:{"User-Agent":"Aftertrack/1.0"} });
-    const d1 = await res1.json();
-    const releaseId = d1.releases?.[0]?.id;
-    if (!releaseId) return [];
-    const res2 = await fetch(`https://musicbrainz.org/ws/2/release/${releaseId}?inc=recordings&fmt=json`, { headers:{"User-Agent":"Aftertrack/1.0"} });
-    const d2 = await res2.json();
-    const tracks = d2.media?.[0]?.tracks || [];
-    return tracks.map((t,i) => ({ number: t.position||i+1, title: t.title, length: t.length }));
+    const data = await fetchSpotifyAlbum(mbid);
+    return data.tracklist || [];
   } catch { return []; }
+}
+
+// Compatibilidad con código viejo que usaba resolveCoverUrl
+async function resolveCoverUrl(mbid) {
+  try {
+    const data = await fetchSpotifyAlbum(mbid);
+    return data.coverUrl || null;
+  } catch { return null; }
 }
 
 // ─── HALF STARS ──────────────────────────────────────────────────────────────
@@ -441,12 +431,10 @@ function SearchAlbumRow({ album, onSelect }) {
   const [preview, setPreview] = useState(null);
   const [fetchingPreview, setFetchingPreview] = useState(false);
 
-  // Fetch preview URL on mount in background
+  // Fetch preview URL on mount in background (Spotify)
   useEffect(() => {
     setFetchingPreview(true);
-    const params = new URLSearchParams({ mbid:album.mbid, artist:album.artist, title:album.title, mode:"album" });
-    fetch(`/api/cover?${params}`)
-      .then(r=>r.json())
+    fetchSpotifyAlbum(album.mbid)
       .then(d=>{ if(d.previewUrl) setPreview(d.previewUrl); })
       .catch(()=>{})
       .finally(()=>setFetchingPreview(false));
@@ -498,7 +486,7 @@ function WriteModal({ onClose, onAdd }) {
     clearTimeout(debounce.current);
     debounce.current = setTimeout(async()=>{
       setSearching(true);
-      setResults(await searchMusicBrainz(query));
+      setResults(await searchSpotify(query));
       setSearching(false);
     }, 500);
   }, [query]);
@@ -510,8 +498,8 @@ function WriteModal({ onClose, onAdd }) {
       const { data:existing } = await supabase.from("albums").select("id").eq("mbid", selected.mbid).single();
       let albumId = existing?.id;
       if (!albumId) {
-        // Resolve real cover URL before saving
-        const resolvedCover = coverErr ? null : (await resolveCoverUrl(selected.mbid, selected.artist, selected.title) || selected.cover);
+        // Con Spotify la cover ya viene resuelta en el resultado de búsqueda
+        const resolvedCover = coverErr ? null : (selected.cover || null);
         const { data:created, error } = await supabase.from("albums").insert({ mbid:selected.mbid, title:selected.title, artist:selected.artist, year:selected.year, cover_url:resolvedCover }).select("id").single();
         if (error) throw error;
         albumId = created.id;
@@ -519,7 +507,7 @@ function WriteModal({ onClose, onAdd }) {
         // If album exists but has no cover, try to update it
         const { data:albumData } = await supabase.from("albums").select("cover_url").eq("id", albumId).single();
         if (!albumData?.cover_url) {
-          const resolvedCover = await resolveCoverUrl(selected.mbid, selected.artist, selected.title);
+          const resolvedCover = selected.cover || await resolveCoverUrl(selected.mbid);
           if (resolvedCover) await supabase.from("albums").update({ cover_url: resolvedCover }).eq("id", albumId);
         }
       }
@@ -1402,11 +1390,17 @@ function AlbumPage({ albumId, onNavigate, userId }) {
       setAlbum(albumData);
       setReviews(reviewData||[]);
       setFollowingIds((followData||[]).map(f=>f.following_id));
-      // Load previews in background
       if (albumData?.mbid) {
-        resolveAlbumFull(albumData.mbid, albumData.artist, albumData.title).then(d => {
+        fetchSpotifyAlbum(albumData.mbid).then(d => {
           if (d.previewUrl) setAlbumPreview(d.previewUrl);
-          if (d.trackPreviews) setTrackPreviews(d.trackPreviews);
+          if (d.tracklist) {
+            const previews = {};
+            d.tracklist.forEach(t => { if (t.previewUrl) previews[`track_${t.number}`] = t.previewUrl; });
+            setTrackPreviews(previews);
+          }
+          if (d.coverUrl && !albumData.cover_url) {
+            supabase.from("albums").update({ cover_url: d.coverUrl }).eq("id", albumId);
+          }
         });
       }
       setLoading(false);
