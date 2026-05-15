@@ -480,12 +480,12 @@ function SearchAlbumRow({ album, onSelect }) {
 }
 
 // ─── WRITE MODAL (album review) ──────────────────────────────────────────────
-function WriteModal({ onClose, onAdd }) {
-  const [step, setStep] = useState("search");
+function WriteModal({ onClose, onAdd, preselectedAlbum=null }) {
+  const [step, setStep] = useState(preselectedAlbum ? "review" : "search");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
-  const [selected, setSelected] = useState(null);
+  const [selected, setSelected] = useState(preselectedAlbum);
   const [coverErr, setCoverErr] = useState(false);
   const [rating, setRating] = useState(0);
   const [text, setText] = useState("");
@@ -1175,6 +1175,7 @@ function SearchPage({ onNavigate, userId }) {
   const [tab, setTab] = useState("albums");
   const [query, setQuery] = useState("");
   const [albumResults, setAlbumResults] = useState([]);
+  const [spotifyResults, setSpotifyResults] = useState([]);
   const [userResults, setUserResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [following, setFollowing] = useState(new Set());
@@ -1210,12 +1211,13 @@ function SearchPage({ onNavigate, userId }) {
     clearTimeout(debounce.current);
     debounce.current = setTimeout(async () => {
       setLoading(true);
-      const [{ data:albums }, { data:users }] = await Promise.all([
-        supabase.from("albums").select("*").or(`title.ilike.%${query}%,artist.ilike.%${query}%`).limit(10),
+      const [{ data:users }, spotifyAlbums] = await Promise.all([
         supabase.from("profiles").select("*").or(`username.ilike.%${query}%,display_name.ilike.%${query}%`).limit(10),
+        searchSpotify(query),
       ]);
-      setAlbumResults(albums||[]);
+      setAlbumResults([]);
       setUserResults(users||[]);
+      setSpotifyResults(spotifyAlbums||[]);
       setLoading(false);
     }, 400);
   }, [query]);
@@ -1264,35 +1266,32 @@ function SearchPage({ onNavigate, userId }) {
           <>
             {/* Albums tab */}
             {tab==="albums" && (
-              albumResults.length>0 ? (
-                <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-                  {albumResults.map(a => {
-                    const ac = accentFor(a.id);
-                    return (
-                      <div key={a.id} onClick={()=>onNavigate("album",a.id)}
-                        style={{ background:T.surface, borderRadius:14, padding:"14px 16px", display:"flex", gap:14, alignItems:"center", cursor:"pointer", border:`1px solid ${T.border}`, transition:"border-color 0.15s" }}
-                        onMouseEnter={e=>e.currentTarget.style.borderColor=T.textMute}
+              <div>
+                {spotifyResults.length > 0 && (
+                  <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                    {spotifyResults.map(a => (
+                      <div key={a.spotifyId} onClick={()=>onNavigate("spotifyalbum", a)}
+                        style={{ background:T.surface, borderRadius:14, padding:"12px 14px", display:"flex", gap:12, alignItems:"center", cursor:"pointer", border:`1px solid ${T.border}`, transition:"border-color 0.15s" }}
+                        onMouseEnter={e=>e.currentTarget.style.borderColor=T.accent}
                         onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
-                        <AlbumCover src={a.cover_url} ac={ac} size={52}/>
-                        <div style={{ flex:1 }}>
-                          <div style={{ fontSize:15, fontWeight:700, color:T.text }}>{a.title}</div>
-                          <div style={{ fontSize:13, color:T.textSub }}>{a.artist} · {a.year}</div>
+                        <AlbumCover src={a.cover} ac={T.accent} size={48}/>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:14, fontWeight:700, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{a.title}</div>
+                          <div style={{ fontSize:12, color:T.textSub }}>{a.artist} · {a.year}</div>
                         </div>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.textMute} strokeWidth="2"><polyline points="9,18 15,12 9,6"/></svg>
                       </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div>
-                  {query.length < 2 && <TrendingSection onNavigate={onNavigate}/>}
-                  {query.length >= 2 && (
-                    <div style={{ textAlign:"center", padding:"48px 0" }}>
-                      <div style={{ fontSize:36, marginBottom:10 }}>🎵</div>
-                      <div style={{ fontSize:14, color:T.textSub }}>Sin resultados</div>
-                    </div>
-                  )}
-                </div>
-              )
+                    ))}
+                  </div>
+                )}
+                {query.length < 2 && <TrendingSection onNavigate={onNavigate}/>}
+                {query.length >= 2 && spotifyResults.length === 0 && (
+                  <div style={{ textAlign:"center", padding:"48px 0" }}>
+                    <div style={{ fontSize:36, marginBottom:10 }}>🎵</div>
+                    <div style={{ fontSize:14, color:T.textSub }}>Sin resultados para "{query}"</div>
+                  </div>
+                )}
+              </div>
             )}
 
             {/* Users tab */}
@@ -2969,6 +2968,7 @@ export default function Aftertrack() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState({ name:"feed", data:null });
   const [modal, setModal] = useState(false);
+  const [preselectedAlbum, setPreselectedAlbum] = useState(null);
   const [feedKey, setFeedKey] = useState(0);
   const [showOnboarding, setShowOnboarding] = useState(false);
 
@@ -2991,7 +2991,14 @@ export default function Aftertrack() {
 
   const handleAuth = (session, user) => { setSession(session); setUser(user); };
   const handleLogout = async () => { await supabase.auth.signOut(); setSession(null); setUser(null); setPage({name:"feed",data:null}); };
-  const navigate = (name, data=null) => setPage({name, data});
+  const navigate = (name, data=null) => {
+    if (name === "spotifyalbum") {
+      setPreselectedAlbum(data);
+      setModal(true);
+    } else {
+      setPage({name, data});
+    }
+  };
 
   if (loading) return <div style={{ minHeight:"100vh", background:T.bg, display:"flex", alignItems:"center", justifyContent:"center" }}><Spinner/></div>;
   if (!session) return <AuthPage onAuth={handleAuth}/>;
@@ -3025,7 +3032,7 @@ export default function Aftertrack() {
       </div>
 
       {!["album","list","autolist","userprofile","artist","tag"].includes(page.name) && <BottomNav current={page.name} onNavigate={navigate}/>}
-      {modal && <WriteModal onClose={()=>setModal(false)} onNavigate={navigate} onAdd={()=>{ setModal(false); setFeedKey(k=>k+1); }}/>}
+      {modal && <WriteModal onClose={()=>{ setModal(false); setPreselectedAlbum(null); }} onNavigate={navigate} onAdd={()=>{ setModal(false); setPreselectedAlbum(null); setFeedKey(k=>k+1); }} preselectedAlbum={preselectedAlbum}/>}
       {showOnboarding && <OnboardingModal onDone={finishOnboarding}/>}
     </>
   );
