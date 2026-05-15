@@ -974,6 +974,7 @@ function ReviewCard({ r, i, onNavigate }) {
   const [trackReviews, setTrackReviews] = useState(null);
   const [showComments, setShowComments] = useState(false);
   const [showShare, setShowShare] = useState(false);
+  const [showDetail, setShowDetail] = useState(false);
 
   useEffect(() => {
     supabase.from("track_reviews")
@@ -1037,6 +1038,12 @@ function ReviewCard({ r, i, onNavigate }) {
             </div>
             {trackReviews && trackReviews.length > 0 && (
               <div style={{ borderTop:`1px solid ${ac}22`, paddingTop:8, display:"flex", flexDirection:"column", gap:4 }}>
+                {r.favorite_track && (
+                  <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:4, padding:"4px 8px", background:`${T.accent}18`, borderRadius:8 }}>
+                    <span style={{ fontSize:11 }}>⭐</span>
+                    <span style={{ fontSize:11, color:T.accent, fontWeight:700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{r.favorite_track}</span>
+                  </div>
+                )}
                 {trackReviews.map(tr => (
                   <div key={tr.track_number} style={{ display:"flex", alignItems:"center", gap:6 }}>
                     <span style={{ fontSize:11, color:T.textMute, width:14, flexShrink:0 }}>{tr.track_number}.</span>
@@ -1044,6 +1051,18 @@ function ReviewCard({ r, i, onNavigate }) {
                     <Stars n={tr.rating} size={10}/>
                   </div>
                 ))}
+                <button onClick={e=>{ e.stopPropagation(); setShowDetail(true); }}
+                  style={{ marginTop:4, fontSize:11, color:T.accent, background:"none", border:`1px solid ${T.accent}33`, borderRadius:8, padding:"4px 0", cursor:"pointer", width:"100%" }}>
+                  Ver todas las canciones
+                </button>
+              </div>
+            )}
+            {!trackReviews?.length && r.favorite_track && (
+              <div style={{ borderTop:`1px solid ${ac}22`, paddingTop:8 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:5, padding:"4px 8px", background:`${T.accent}18`, borderRadius:8 }}>
+                  <span style={{ fontSize:11 }}>⭐</span>
+                  <span style={{ fontSize:11, color:T.accent, fontWeight:700 }}>{r.favorite_track}</span>
+                </div>
               </div>
             )}
           </div>
@@ -1051,13 +1070,6 @@ function ReviewCard({ r, i, onNavigate }) {
 
         {/* Review text */}
         {r.text && <p style={{ fontSize:14, lineHeight:1.7, color:T.textSub, margin:"0 0 14px", fontFamily:"Georgia,serif" }}>"{r.text}"</p>}
-        {r.favorite_track && (
-          <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:14, padding:"7px 12px", background:`${T.accent}11`, borderRadius:10, border:`1px solid ${T.accent}22` }}>
-            <span style={{ fontSize:13 }}>⭐</span>
-            <span style={{ fontSize:12, color:T.textMute, fontWeight:600 }}>Favorita:</span>
-            <span style={{ fontSize:13, color:T.accent, fontWeight:600, flex:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{r.favorite_track}</span>
-          </div>
-        )}
 
         {/* Actions */}
         <div style={{ borderTop:`1px solid ${T.border}`, paddingTop:12, display:"flex", gap:4, alignItems:"center" }}>
@@ -1084,6 +1096,45 @@ function ReviewCard({ r, i, onNavigate }) {
       </div>
       {showComments && <CommentsModal review={r} onClose={()=>setShowComments(false)}/>}
       {showShare && <ShareModal review={r} onClose={()=>setShowShare(false)}/>}
+      {showDetail && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200, backdropFilter:"blur(8px)" }}
+          onClick={e=>{ if(e.target===e.currentTarget) setShowDetail(false); }}>
+          <div style={{ background:T.surface, borderRadius:"20px 20px 0 0", width:"100%", maxWidth:560, border:`1px solid ${T.border}`, borderBottom:"none", maxHeight:"80vh", display:"flex", flexDirection:"column" }}>
+            <div style={{ display:"flex", justifyContent:"center", padding:"12px 0 0" }}>
+              <div style={{ width:36, height:4, borderRadius:2, background:T.border }}/>
+            </div>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 20px 8px" }}>
+              <div>
+                <div style={{ fontSize:16, fontWeight:700, color:T.text }}>{r.album_title}</div>
+                <div style={{ fontSize:12, color:T.textSub }}>{r.artist} · reseña de {r.display_name||r.username}</div>
+              </div>
+              <button onClick={()=>setShowDetail(false)} style={{ background:T.surface2, border:`1px solid ${T.border}`, borderRadius:"50%", width:28, height:28, cursor:"pointer", fontSize:15, color:T.textSub, display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
+            </div>
+            {r.favorite_track && (
+              <div style={{ margin:"0 20px 10px", display:"flex", alignItems:"center", gap:6, padding:"8px 12px", background:`${T.accent}15`, borderRadius:10, border:`1px solid ${T.accent}33` }}>
+                <span>⭐</span>
+                <span style={{ fontSize:12, color:T.textMute, fontWeight:600 }}>Favorita:</span>
+                <span style={{ fontSize:13, color:T.accent, fontWeight:700 }}>{r.favorite_track}</span>
+              </div>
+            )}
+            <div style={{ flex:1, overflowY:"auto", padding:"0 20px 24px" }}>
+              {(trackReviews||[]).length === 0
+                ? <div style={{ textAlign:"center", padding:"32px 0", color:T.textMute, fontSize:13 }}>No hay canciones puntuadas</div>
+                : (trackReviews||[]).map(tr => (
+                  <div key={tr.track_number} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 0", borderBottom:`1px solid ${T.border}` }}>
+                    <span style={{ fontSize:12, color:T.textMute, width:20, flexShrink:0, textAlign:"right" }}>{tr.track_number}.</span>
+                    <span style={{ fontSize:14, color:r.favorite_track===tr.track_title?T.accent:T.text, flex:1, fontWeight:r.favorite_track===tr.track_title?700:400 }}>
+                      {r.favorite_track===tr.track_title?"⭐ ":""}{tr.track_title}
+                    </span>
+                    <Stars n={tr.rating} size={14}/>
+                    <span style={{ fontSize:12, color:T.textSub, minWidth:24, textAlign:"right" }}>{tr.rating}</span>
+                  </div>
+                ))
+              }
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
