@@ -493,6 +493,8 @@ function WriteModal({ onClose, onAdd }) {
   const [tagInput, setTagInput] = useState("");
   const [listenedAt, setListenedAt] = useState(new Date().toISOString().split("T")[0]);
   const [submitting, setSubmitting] = useState(false);
+  const [tracklist, setTracklist] = useState([]);
+  const [trackRatings, setTrackRatings] = useState({});
   const SUGGESTED_TAGS = ["rock","pop","jazz","hip-hop","electronica","indie","metal","clasica","reggae","folk","soul","punk","alternativo","ambient"];
   const addTag = (tag) => { const t=tag.toLowerCase().trim(); if(t&&!tags.includes(t)&&tags.length<5) setTags(p=>[...p,t]); setTagInput(""); };
   const removeTag = (tag) => setTags(p=>p.filter(t=>t!==tag));
@@ -507,6 +509,16 @@ function WriteModal({ onClose, onAdd }) {
       setSearching(false);
     }, 500);
   }, [query]);
+
+  // Cargar tracklist cuando se selecciona un álbum
+  useEffect(() => {
+    if (!selected) return;
+    setTracklist([]);
+    setTrackRatings({});
+    fetchSpotifyAlbum(selected.mbid).then(d => {
+      if (d.tracklist) setTracklist(d.tracklist);
+    });
+  }, [selected]);
 
   const handleSubmit = async () => {
     if (!selected||!rating||text.length<10) return;
@@ -534,6 +546,15 @@ function WriteModal({ onClose, onAdd }) {
         listened_at: listenedAt || null,
       });
       if (error) throw error;
+      // Guardar reseñas de canciones individuales
+      const trackEntries = Object.entries(trackRatings).filter(([,r])=>r>0);
+      if (trackEntries.length > 0) {
+        const trackInserts = trackEntries.map(([num, r]) => {
+          const track = tracklist.find(t=>String(t.number)===String(num));
+          return { album_id: albumId, track_number: Number(num), track_title: track?.title||"", rating: r };
+        });
+        await supabase.from("track_reviews").upsert(trackInserts, { onConflict:"album_id,track_number,user_id" });
+      }
       onAdd();
       onClose();
       if (onNavigate) onNavigate("album", albumId);
@@ -628,17 +649,30 @@ function WriteModal({ onClose, onAdd }) {
                   ))}
                 </div>
               )}
-              <div style={{ display:"flex", flexWrap:"wrap", gap:5, marginBottom:8 }}>
-                {SUGGESTED_TAGS.filter(t=>!tags.includes(t)).slice(0,6).map(t=>(
+              <div style={{ display:"flex", flexWrap:"wrap", gap:5 }}>
+                {SUGGESTED_TAGS.filter(t=>!tags.includes(t)).slice(0,8).map(t=>(
                   <button key={t} onClick={()=>addTag(t)} style={{ fontSize:11, color:T.textSub, background:T.surface2, border:`1px solid ${T.border}`, borderRadius:20, padding:"3px 9px", cursor:"pointer" }}>+{t}</button>
                 ))}
               </div>
-              <input value={tagInput} onChange={e=>setTagInput(e.target.value)}
-                onKeyDown={e=>{ if(["Enter"," ",","].includes(e.key)&&tagInput.trim()){ e.preventDefault(); addTag(tagInput); }}}
-                placeholder="Escribí un tag y presioná Enter"
-                style={{ width:"100%", padding:"9px 12px", background:T.surface2, border:`1.5px solid ${T.border}`, borderRadius:10, fontSize:13, color:T.text, outline:"none", fontFamily:"inherit" }}
-                onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.border}/>
             </div>
+            {/* Canciones */}
+            {tracklist.length > 0 && (
+              <div style={{ marginBottom:16 }}>
+                <div style={{ fontSize:11, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:10 }}>PUNTUÁ LAS CANCIONES (OPCIONAL)</div>
+                <div style={{ display:"flex", flexDirection:"column", gap:6, maxHeight:220, overflowY:"auto", paddingRight:4 }}>
+                  {tracklist.map(track => (
+                    <div key={track.number} style={{ display:"flex", alignItems:"center", gap:10, padding:"7px 10px", background:T.surface2, borderRadius:10, border:`1px solid ${trackRatings[track.number]>0?T.accent+"44":T.border}` }}>
+                      <span style={{ fontSize:11, color:T.textMute, width:18, flexShrink:0, textAlign:"right" }}>{track.number}.</span>
+                      <span style={{ fontSize:13, color:T.text, flex:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{track.title}</span>
+                      <Stars n={trackRatings[track.number]||0} onChange={v=>setTrackRatings(p=>({...p,[track.number]:v}))} size={14}/>
+                      {trackRatings[track.number]>0 && (
+                        <span onClick={()=>setTrackRatings(p=>{ const n={...p}; delete n[track.number]; return n; })} style={{ fontSize:11, color:T.textMute, cursor:"pointer", flexShrink:0 }}>×</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <button onClick={handleSubmit} disabled={!ready} style={{ width:"100%", padding:"13px", background:ready?`linear-gradient(135deg,${T.accent},${T.accent2})`:"#2a2f45", border:"none", borderRadius:12, color:ready?"#fff":T.textMute, fontSize:15, fontWeight:600, cursor:ready?"pointer":"default" }}>
               {submitting?"Publicando...":"Publicar reseña del álbum"}
             </button>
