@@ -2,6 +2,23 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 
+// ─── FONT ─────────────────────────────────────────────────────────────────────
+if (typeof document !== "undefined") {
+  if (!document.getElementById("poppins-font")) {
+    const link = document.createElement("link");
+    link.id = "poppins-font";
+    link.rel = "stylesheet";
+    link.href = "https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap";
+    document.head.appendChild(link);
+  }
+  if (!document.getElementById("poppins-style")) {
+    const style = document.createElement("style");
+    style.id = "poppins-style";
+    style.textContent = "*, *::before, *::after { font-family: 'Poppins', sans-serif !important; }";
+    document.head.appendChild(style);
+  }
+}
+
 // ─── THEME ────────────────────────────────────────────────────────────────────
 const THEMES = {
   dark:  { bg:"#0f1117", surface:"#181c27", surface2:"#1e2333", border:"#2a2f45", text:"#e8eaf0", textSub:"#7b82a0", textMute:"#4a5070", accent:"#7c6fff", accent2:"#a78bfa", like:"#f06292" },
@@ -393,8 +410,8 @@ function AuthPage({ onAuth }) {
   const usernameHint = usernameStatus==="checking" ? "Verificando..." : usernameStatus==="available" ? "✓ Disponible" : usernameStatus==="taken" ? "✗ Ya está en uso" : "";
 
   return (
-    <div style={{ minHeight:"100vh", background:`linear-gradient(160deg,#0f1117 0%,#1a1040 100%)`, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
-      <div style={{ background:T.surface, borderRadius:24, padding:"36px 32px", width:"100%", maxWidth:400, boxShadow:"0 24px 60px rgba(0,0,0,0.5)", border:`1px solid ${T.border}` }}>
+    <div style={{ minHeight:"100vh", height:"100vh", background:`linear-gradient(160deg,#0f1117 0%,#1a1040 60%,#0d0d1f 100%)`, display:"flex", alignItems:"center", justifyContent:"center", padding:"24px 20px", boxSizing:"border-box" }}>
+      <div style={{ background:`${T.surface}ee`, backdropFilter:"blur(20px)", borderRadius:24, padding:"40px 32px", width:"100%", maxWidth:420, border:`1px solid ${T.border}`, boxShadow:`0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px ${T.accent}11` }}>
         <div style={{ textAlign:"center", marginBottom:28 }}>
           <div style={{ width:52, height:52, borderRadius:16, background:`linear-gradient(135deg,${T.accent},${T.accent2})`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:26, margin:"0 auto 14px", boxShadow:`0 8px 24px ${T.accent}44` }}>♪</div>
           <div style={{ fontSize:26, fontWeight:800, color:T.text }}>aftertrack</div>
