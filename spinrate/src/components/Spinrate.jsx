@@ -1036,33 +1036,20 @@ function ReviewCard({ r, i, onNavigate }) {
               </div>
               <RatingDisplay n={r.rating} size={13}/>
             </div>
-            {trackReviews && trackReviews.length > 0 && (
-              <div style={{ borderTop:`1px solid ${ac}22`, paddingTop:8, display:"flex", flexDirection:"column", gap:4 }}>
+            {(r.favorite_track || (trackReviews && trackReviews.length > 0)) && (
+              <div style={{ borderTop:`1px solid ${ac}22`, paddingTop:8 }}>
                 {r.favorite_track && (
-                  <div style={{ display:"flex", alignItems:"center", gap:5, marginBottom:4, padding:"4px 8px", background:`${T.accent}18`, borderRadius:8 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:5, padding:"4px 8px", background:`${T.accent}18`, borderRadius:8, marginBottom: trackReviews?.length>0?6:0 }}>
                     <span style={{ fontSize:11 }}>⭐</span>
                     <span style={{ fontSize:11, color:T.accent, fontWeight:700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{r.favorite_track}</span>
                   </div>
                 )}
-                {trackReviews.map(tr => (
-                  <div key={tr.track_number} style={{ display:"flex", alignItems:"center", gap:6 }}>
-                    <span style={{ fontSize:11, color:T.textMute, width:14, flexShrink:0 }}>{tr.track_number}.</span>
-                    <span style={{ fontSize:12, color:T.textSub, flex:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{tr.track_title}</span>
-                    <Stars n={tr.rating} size={10}/>
-                  </div>
-                ))}
-                <button onClick={e=>{ e.stopPropagation(); setShowDetail(true); }}
-                  style={{ marginTop:4, fontSize:11, color:T.accent, background:"none", border:`1px solid ${T.accent}33`, borderRadius:8, padding:"4px 0", cursor:"pointer", width:"100%" }}>
-                  Ver todas las canciones
-                </button>
-              </div>
-            )}
-            {!trackReviews?.length && r.favorite_track && (
-              <div style={{ borderTop:`1px solid ${ac}22`, paddingTop:8 }}>
-                <div style={{ display:"flex", alignItems:"center", gap:5, padding:"4px 8px", background:`${T.accent}18`, borderRadius:8 }}>
-                  <span style={{ fontSize:11 }}>⭐</span>
-                  <span style={{ fontSize:11, color:T.accent, fontWeight:700 }}>{r.favorite_track}</span>
-                </div>
+                {trackReviews && trackReviews.length > 0 && (
+                  <button onClick={e=>{ e.stopPropagation(); setShowDetail(true); }}
+                    style={{ fontSize:11, color:T.accent, background:"none", border:`1px solid ${T.accent}33`, borderRadius:8, padding:"4px 0", cursor:"pointer", width:"100%" }}>
+                    Ver {trackReviews.length} canciones puntuadas
+                  </button>
+                )}
               </div>
             )}
           </div>
