@@ -480,7 +480,7 @@ function SearchAlbumRow({ album, onSelect }) {
 }
 
 // ─── WRITE MODAL (album review) ──────────────────────────────────────────────
-function WriteModal({ onClose, onAdd, preselectedAlbum=null }) {
+function WriteModal({ onClose, onAdd, onNavigate, preselectedAlbum=null }) {
   const [step, setStep] = useState(preselectedAlbum ? "review" : "search");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
@@ -495,6 +495,7 @@ function WriteModal({ onClose, onAdd, preselectedAlbum=null }) {
   const [submitting, setSubmitting] = useState(false);
   const [tracklist, setTracklist] = useState([]);
   const [trackRatings, setTrackRatings] = useState({});
+  const [favoriteTrack, setFavoriteTrack] = useState(null);
   const SUGGESTED_TAGS = ["rock","pop","jazz","hip-hop","electronica","indie","metal","clasica","reggae","folk","soul","punk","alternativo","ambient"];
   const addTag = (tag) => { const t=tag.toLowerCase().trim(); if(t&&!tags.includes(t)&&tags.length<5) setTags(p=>[...p,t]); setTagInput(""); };
   const removeTag = (tag) => setTags(p=>p.filter(t=>t!==tag));
@@ -521,7 +522,7 @@ function WriteModal({ onClose, onAdd, preselectedAlbum=null }) {
   }, [selected]);
 
   const handleSubmit = async () => {
-    if (!selected||!rating||text.length<10) return;
+    if (!selected||!rating) return;
     setSubmitting(true);
     try {
       const { data:existing } = await supabase.from("albums").select("id").eq("mbid", selected.mbid).single();
@@ -544,6 +545,7 @@ function WriteModal({ onClose, onAdd, preselectedAlbum=null }) {
         album_id: albumId, rating, text: text.trim(),
         tags: tags.length > 0 ? tags : null,
         listened_at: listenedAt || null,
+        favorite_track: favoriteTrack || null,
       });
       if (error) throw error;
       // Guardar reseñas de canciones individuales
@@ -562,7 +564,7 @@ function WriteModal({ onClose, onAdd, preselectedAlbum=null }) {
     setSubmitting(false);
   };
 
-  const ready = selected && rating && text.length>=10 && !submitting;
+  const ready = selected && rating && !submitting;
 
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200, backdropFilter:"blur(8px)" }}
@@ -658,12 +660,24 @@ function WriteModal({ onClose, onAdd, preselectedAlbum=null }) {
             {/* Canciones */}
             {tracklist.length > 0 && (
               <div style={{ marginBottom:16 }}>
-                <div style={{ fontSize:11, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:10 }}>PUNTUÁ LAS CANCIONES (OPCIONAL)</div>
-                <div style={{ display:"flex", flexDirection:"column", gap:6, maxHeight:220, overflowY:"auto", paddingRight:4 }}>
+                {/* Canción favorita */}
+                <div style={{ fontSize:11, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:8 }}>⭐ CANCIÓN FAVORITA</div>
+                <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:14 }}>
+                  {tracklist.map(track => (
+                    <button key={track.number} onClick={()=>setFavoriteTrack(favoriteTrack===track.title?null:track.title)}
+                      style={{ fontSize:12, padding:"5px 12px", borderRadius:20, border:`1.5px solid ${favoriteTrack===track.title?T.accent:T.border}`, background:favoriteTrack===track.title?`${T.accent}22`:"none", color:favoriteTrack===track.title?T.accent:T.textSub, cursor:"pointer", transition:"all 0.15s", fontWeight:favoriteTrack===track.title?700:400 }}>
+                      {track.title}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ fontSize:11, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:8 }}>PUNTUÁ LAS CANCIONES (OPCIONAL)</div>
+                <div style={{ display:"flex", flexDirection:"column", gap:6, maxHeight:200, overflowY:"auto", paddingRight:4 }}>
                   {tracklist.map(track => (
                     <div key={track.number} style={{ display:"flex", alignItems:"center", gap:10, padding:"7px 10px", background:T.surface2, borderRadius:10, border:`1px solid ${trackRatings[track.number]>0?T.accent+"44":T.border}` }}>
                       <span style={{ fontSize:11, color:T.textMute, width:18, flexShrink:0, textAlign:"right" }}>{track.number}.</span>
-                      <span style={{ fontSize:13, color:T.text, flex:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{track.title}</span>
+                      <span style={{ fontSize:13, color:favoriteTrack===track.title?T.accent:T.text, flex:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", fontWeight:favoriteTrack===track.title?700:400 }}>
+                        {favoriteTrack===track.title?"⭐ ":""}{track.title}
+                      </span>
                       <Stars n={trackRatings[track.number]||0} onChange={v=>setTrackRatings(p=>({...p,[track.number]:v}))} size={14}/>
                       {trackRatings[track.number]>0 && (
                         <span onClick={()=>setTrackRatings(p=>{ const n={...p}; delete n[track.number]; return n; })} style={{ fontSize:11, color:T.textMute, cursor:"pointer", flexShrink:0 }}>×</span>
@@ -1037,6 +1051,13 @@ function ReviewCard({ r, i, onNavigate }) {
 
         {/* Review text */}
         {r.text && <p style={{ fontSize:14, lineHeight:1.7, color:T.textSub, margin:"0 0 14px", fontFamily:"Georgia,serif" }}>"{r.text}"</p>}
+        {r.favorite_track && (
+          <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:14, padding:"7px 12px", background:`${T.accent}11`, borderRadius:10, border:`1px solid ${T.accent}22` }}>
+            <span style={{ fontSize:13 }}>⭐</span>
+            <span style={{ fontSize:12, color:T.textMute, fontWeight:600 }}>Favorita:</span>
+            <span style={{ fontSize:13, color:T.accent, fontWeight:600, flex:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{r.favorite_track}</span>
+          </div>
+        )}
 
         {/* Actions */}
         <div style={{ borderTop:`1px solid ${T.border}`, paddingTop:12, display:"flex", gap:4, alignItems:"center" }}>
