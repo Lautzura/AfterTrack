@@ -1,81 +1,133 @@
+// spinrate/src/app/api/spotify/route.js
+// Maneja autenticación y búsquedas con la API de Spotify
+ 
+const CLIENT_ID     = process.env.SPOTIFY_CLIENT_ID;
+const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
+ 
+let cachedToken = null;
+let tokenExpiry  = 0;
+ 
+async function getToken() {
+  if (cachedToken && Date.now() < tokenExpiry) return cachedToken;
+  const res = await fetch("https://accounts.spotify.com/api/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: "Basic " + Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString("base64"),
+    },
+    body: "grant_type=client_credentials",
+  });
+  const data = await res.json();
+  if (!data.access_token) throw new Error("No se pudo obtener token de Spotify");
+  cachedToken = data.access_token;
+  tokenExpiry  = Date.now() + (data.expires_in - 60) * 1000;
+  return cachedToken;
+}
+ 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
-  const mbid = searchParams.get("mbid");
-  const artist = searchParams.get("artist") || "";
-  const title = searchParams.get("title") || "";
-  const trackTitle = searchParams.get("track") || "";
-  const mode = searchParams.get("mode") || "album"; // "album" | "track"
-
-  let coverUrl = null;
-  let previewUrl = null;
-  let trackPreviews = {}; // { trackTitle: previewUrl }
-
-  // 1. Cover Art Archive (only for albums)
-  if (mbid && mode === "album") {
-    try {
-      const res = await fetch(`https://coverartarchive.org/release-group/${mbid}`, {
-        headers: { "User-Agent": "Spinrate/1.0 (spinrate.app)" },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const img = data?.images?.find(i => i.front) || data?.images?.[0];
-        coverUrl = img?.thumbnails?.["250"] || img?.thumbnails?.small || img?.image || null;
-      }
-    } catch {}
-  }
-
-  // 2. iTunes — cover fallback + previews
+  const type  = searchParams.get("type");   // "search" | "album" | "artist"
+  const query = searchParams.get("q");
+  const id    = searchParams.get("id");
+ 
   try {
-    const q = trackTitle
-      ? encodeURIComponent(`${artist} ${trackTitle}`.trim())
-      : encodeURIComponent(`${artist} ${title}`.trim());
-
-    const entity = mode === "track" ? "song" : "album";
-    const res = await fetch(`https://itunes.apple.com/search?term=${q}&entity=${entity}&limit=5`);
-
-    if (res.ok) {
+    const token = await getToken();
+    const headers = { Authorization: `Bearer ${token}` };
+ 
+    // ── Búsqueda de álbumes ──────────────────────────────────────────────────
+    if (type === "search") {
+      if (!query) return Response.json({ error: "Falta query" }, { status: 400 });
+      const res  = await fetch(
+        `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=album&limit=8&market=AR`,
+        { headers }
+      );
       const data = await res.json();
-
-      if (mode === "album") {
-        // Get album cover + preview of first track
-        const albumMatch = data.results?.find(r =>
-          r.collectionName?.toLowerCase().includes(title.toLowerCase()) ||
-          r.artistName?.toLowerCase().includes(artist.toLowerCase())
-        ) || data.results?.[0];
-
-        if (albumMatch) {
-          if (!coverUrl && albumMatch.artworkUrl100) {
-            coverUrl = albumMatch.artworkUrl100.replace("100x100bb", "250x250bb");
-          }
-          if (albumMatch.previewUrl) previewUrl = albumMatch.previewUrl;
-        }
-
-        // Also fetch all tracks for this album to get track previews
-        if (albumMatch?.collectionId) {
-          try {
-            const tracksRes = await fetch(`https://itunes.apple.com/lookup?id=${albumMatch.collectionId}&entity=song&limit=30`);
-            if (tracksRes.ok) {
-              const tracksData = await tracksRes.json();
-              tracksData.results?.forEach(t => {
-                if (t.wrapperType === "track" && t.trackName && t.previewUrl) {
-                  trackPreviews[t.trackName.toLowerCase()] = t.previewUrl;
-                  // Also store by track number
-                  if (t.trackNumber) trackPreviews[`track_${t.trackNumber}`] = t.previewUrl;
-                }
-              });
-            }
-          } catch {}
-        }
-
-      } else {
-        // Single track preview
-        const trackMatch = data.results?.find(r =>
-          r.trackName?.toLowerCase().includes(trackTitle.toLowerCase())
-        ) || data.results?.[0];
-        if (trackMatch?.previewUrl) previewUrl = trackMatch.previewUrl;
-      }
+      const albums = (data.albums?.items || []).map(a => ({
+        spotifyId: a.id,
+        mbid:      a.id,           // usamos spotifyId como mbid para compatibilidad
+        title:     a.name,
+        artist:    a.artists?.[0]?.name || "Desconocido",
+        year:      a.release_date?.slice(0, 4) || "—",
+        cover:     a.images?.[0]?.url || null,
+        spotifyUrl:a.external_urls?.spotify || null,
+      }));
+      return Response.json({ albums });
     }
-  } catch {}
-
-  return Response.json({ url: coverUrl, previewUrl, trackPreviews });
+ 
+    // ── Detalle de un álbum (portada HD + tracklist) ─────────────────────────
+    if (type === "album") {
+      if (!id) return Response.json({ error: "Falta id" }, { status: 400 });
+      const [albumRes, tracksRes] = await Promise.all([
+        fetch(`https://api.spotify.com/v1/albums/${id}?market=AR`, { headers }),
+        fetch(`https://api.spotify.com/v1/albums/${id}/tracks?limit=50&market=AR`, { headers }),
+      ]);
+      const album  = await albumRes.json();
+      const tracks = await tracksRes.json();
+ 
+      const coverUrl = album.images?.[0]?.url || null;
+      const tracklist = (tracks.items || []).map((t, i) => ({
+        number:     t.track_number || i + 1,
+        title:      t.name,
+        length:     t.duration_ms,
+        previewUrl: t.preview_url || null,
+        spotifyUrl: t.external_urls?.spotify || null,
+      }));
+ 
+      // Preview del álbum = primera canción con preview
+      const previewUrl = tracklist.find(t => t.previewUrl)?.previewUrl || null;
+ 
+      return Response.json({
+        coverUrl,
+        previewUrl,
+        tracklist,
+        genres:    album.genres || [],
+        label:     album.label  || null,
+        spotifyUrl:album.external_urls?.spotify || null,
+      });
+    }
+ 
+    // ── Álbumes de un artista ────────────────────────────────────────────────
+    if (type === "artist") {
+      if (!query) return Response.json({ error: "Falta query" }, { status: 400 });
+      // Primero buscar el artista
+      const searchRes  = await fetch(
+        `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=artist&limit=1&market=AR`,
+        { headers }
+      );
+      const searchData = await searchRes.json();
+      const artist     = searchData.artists?.items?.[0];
+      if (!artist) return Response.json({ albums: [], artistInfo: null });
+ 
+      const albumsRes  = await fetch(
+        `https://api.spotify.com/v1/artists/${artist.id}/albums?include_groups=album,single&limit=20&market=AR`,
+        { headers }
+      );
+      const albumsData = await albumsRes.json();
+      const albums = (albumsData.items || []).map(a => ({
+        spotifyId: a.id,
+        mbid:      a.id,
+        title:     a.name,
+        artist:    a.artists?.[0]?.name || query,
+        year:      a.release_date?.slice(0, 4) || "—",
+        cover:     a.images?.[0]?.url || null,
+      }));
+ 
+      return Response.json({
+        albums,
+        artistInfo: {
+          id:         artist.id,
+          name:       artist.name,
+          image:      artist.images?.[0]?.url || null,
+          genres:     artist.genres || [],
+          followers:  artist.followers?.total || 0,
+          spotifyUrl: artist.external_urls?.spotify || null,
+        },
+      });
+    }
+ 
+    return Response.json({ error: "Tipo no válido" }, { status: 400 });
+  } catch (err) {
+    console.error("Spotify API error:", err);
+    return Response.json({ error: err.message }, { status: 500 });
+  }
 }
