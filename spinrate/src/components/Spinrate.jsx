@@ -2317,49 +2317,68 @@ function ListsPage({ userId, onNavigate }) {
 
   const loadAll = async () => {
     setLoading(true);
-    const [{ data:userLists }, { data:topWeek }, { data:topAll }] = await Promise.all([
+    const [{ data:userLists }, { data:allReviews }] = await Promise.all([
       supabase.from("lists").select("*, list_albums(count)").eq("user_id", userId).order("created_at",{ascending:false}),
-      // Most reviewed this week
-      supabase.from("feed_reviews").select("album_id, album_title, artist, year, cover_url")
-        .gte("created_at", new Date(Date.now()-7*24*60*60*1000).toISOString())
-        .limit(50),
-      // Best rated albums (avg rating)
-      supabase.from("feed_reviews").select("album_id, album_title, artist, year, cover_url, rating").limit(100),
+      supabase.from("feed_reviews").select("album_id, album_title, artist, year, cover_url, rating, tags, created_at").limit(300),
     ]);
 
-    // Build auto lists
+    const reviews = allReviews || [];
+    const now = Date.now();
+    const week = new Date(now - 7*24*60*60*1000).toISOString();
+    const month = new Date(now - 30*24*60*60*1000).toISOString();
+
+    // helpers
+    const groupBy = (arr, key) => arr.reduce((acc, r) => { acc[r[key]] = (acc[r[key]]||[]); acc[r[key]].push(r); return acc; }, {});
+    const topAlbums = (filtered, n=10) => {
+      const grouped = groupBy(filtered, "album_id");
+      return Object.entries(grouped)
+        .map(([id, rs]) => ({ ...rs[0], _count: rs.length, _avg: rs.reduce((s,r)=>s+Number(r.rating),0)/rs.length }))
+        .sort((a,b) => b._count - a._count).slice(0, n);
+    };
+    const bestRated = (filtered, minReviews=1, n=10) => {
+      const grouped = groupBy(filtered, "album_id");
+      return Object.entries(grouped)
+        .filter(([,rs]) => rs.length >= minReviews)
+        .map(([id, rs]) => ({ ...rs[0], _avg: rs.reduce((s,r)=>s+Number(r.rating),0)/rs.length, _count: rs.length }))
+        .sort((a,b) => b._avg - a._avg).slice(0, n);
+    };
+
     const auto = [];
 
-    // Most reviewed this week
-    if (topWeek && topWeek.length > 0) {
-      const counts = {};
-      const meta = {};
-      topWeek.forEach(r => {
-        counts[r.album_id] = (counts[r.album_id]||0) + 1;
-        meta[r.album_id] = r;
-      });
-      const sorted = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([id])=>meta[id]);
-      if (sorted.length > 0) auto.push({ id:"auto_week", name:"🔥 Más reseñados esta semana", description:"Los álbumes con más actividad en los últimos 7 días", albums:sorted, auto:true });
+    // 🔥 Más reseñados esta semana
+    const weekReviews = reviews.filter(r => r.created_at >= week);
+    if (weekReviews.length > 0) {
+      const albums = topAlbums(weekReviews);
+      if (albums.length > 0) auto.push({ id:"auto_week", emoji:"🔥", name:"Más reseñados esta semana", description:"Los álbumes con más actividad en los últimos 7 días", albums, auto:true });
     }
 
-    // Best rated
-    if (topAll && topAll.length > 0) {
-      const ratings = {};
-      const counts2 = {};
-      const meta2 = {};
-      topAll.forEach(r => {
-        ratings[r.album_id] = (ratings[r.album_id]||0) + Number(r.rating);
-        counts2[r.album_id] = (counts2[r.album_id]||0) + 1;
-        meta2[r.album_id] = r;
-      });
-      const sorted2 = Object.entries(ratings)
-        .filter(([id]) => counts2[id] >= 1)
-        .map(([id, sum]) => ({ id, avg: sum/counts2[id], meta: meta2[id] }))
-        .sort((a,b)=>b.avg-a.avg)
-        .slice(0,10)
-        .map(x => x.meta);
-      if (sorted2.length > 0) auto.push({ id:"auto_best", name:"⭐ Mejor puntuados", description:"Los álbumes con el promedio más alto", albums:sorted2, auto:true });
+    // 📈 Más reseñados este mes
+    const monthReviews = reviews.filter(r => r.created_at >= month);
+    if (monthReviews.length > 0) {
+      const albums = topAlbums(monthReviews);
+      if (albums.length > 0) auto.push({ id:"auto_month", emoji:"📈", name:"Más reseñados este mes", description:"Los álbumes más populares del último mes", albums, auto:true });
     }
+
+    // ⭐ Mejor puntuados
+    const best = bestRated(reviews);
+    if (best.length > 0) auto.push({ id:"auto_best", emoji:"⭐", name:"Mejor puntuados", description:"Los álbumes con el promedio más alto", albums:best, auto:true });
+
+    // 🎵 Más reseñados de todos los tiempos
+    const allTime = topAlbums(reviews);
+    if (allTime.length > 0) auto.push({ id:"auto_alltime", emoji:"🏆", name:"Más reseñados de todos los tiempos", description:"Los álbumes con más reseñas en Aftertrack", albums:allTime, auto:true });
+
+    // Géneros top
+    const genreMap = {};
+    reviews.forEach(r => (r.tags||[]).forEach(tag => {
+      if (!genreMap[tag]) genreMap[tag] = [];
+      genreMap[tag].push(r);
+    }));
+    const topGenres = Object.entries(genreMap).sort((a,b)=>b[1].length-a[1].length).slice(0,3);
+    const genreEmojis = { rock:"🎸", pop:"🎤", jazz:"🎷", "hip-hop":"🎧", electronica:"🎛️", indie:"🌿", metal:"🤘", clasica:"🎻", reggae:"🌴", folk:"🪕", soul:"✨", punk:"💀", alternativo:"🔀", ambient:"🌊" };
+    topGenres.forEach(([tag, rs]) => {
+      const albums = bestRated(rs, 1, 8);
+      if (albums.length >= 2) auto.push({ id:`auto_genre_${tag}`, emoji: genreEmojis[tag]||"🎵", name:`Mejor de ${tag}`, description:`Los mejores álbumes de ${tag} según Aftertrack`, albums, auto:true });
+    });
 
     setAutoLists(auto);
     setMyLists(userLists||[]);
@@ -2368,41 +2387,54 @@ function ListsPage({ userId, onNavigate }) {
 
   useEffect(() => { loadAll(); }, [userId]);
 
-  const AutoListCard = ({ list }) => (
-    <div onClick={()=>onNavigate("autolist", list)}
-      style={{ background:T.surface, borderRadius:16, padding:"16px", border:`1px solid ${T.border}`, cursor:"pointer", transition:"border-color 0.15s", marginBottom:10 }}
-      onMouseEnter={e=>e.currentTarget.style.borderColor=T.textMute}
-      onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
-      <div style={{ display:"flex", gap:3, borderRadius:10, overflow:"hidden", height:64, marginBottom:12 }}>
-        {list.albums.slice(0,4).map((a,i) => {
-          const ac = accentFor(a.album_id||a.id);
-          return (
-            <div key={i} style={{ flex:1, background:`${ac}22`, overflow:"hidden" }}>
-              {a.cover_url
-                ? <img src={a.cover_url} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
-                : <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, color:ac }}>♪</div>
-              }
-            </div>
-          );
-        })}
+  const AutoListCard = ({ list }) => {
+    const ac = accentFor(list.id);
+    return (
+      <div onClick={()=>onNavigate("autolist", list)}
+        style={{ background:T.surface, borderRadius:18, overflow:"hidden", border:`1px solid ${T.border}`, cursor:"pointer", transition:"all 0.2s", marginBottom:12 }}
+        onMouseEnter={e=>{ e.currentTarget.style.borderColor=T.accent; e.currentTarget.style.transform="translateY(-2px)"; }}
+        onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.border; e.currentTarget.style.transform="translateY(0)"; }}>
+        {/* Cover collage */}
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", height:90, overflow:"hidden" }}>
+          {[0,1,2,3].map(i => {
+            const a = list.albums[i];
+            return (
+              <div key={i} style={{ background:a?`${accentFor(a.album_id||i)}22`:T.surface2, overflow:"hidden", borderRight:i%2===0?`1px solid ${T.border}`:"none", borderBottom:i<2?`1px solid ${T.border}`:"none" }}>
+                {a?.cover_url
+                  ? <img src={a.cover_url} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
+                  : <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, color:T.textMute }}>♪</div>
+                }
+              </div>
+            );
+          })}
+        </div>
+        {/* Info */}
+        <div style={{ padding:"12px 14px 14px" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:3 }}>
+            <span style={{ fontSize:16 }}>{list.emoji}</span>
+            <span style={{ fontSize:14, fontWeight:700, color:T.text }}>{list.name}</span>
+          </div>
+          <div style={{ fontSize:12, color:T.textSub, marginBottom:6 }}>{list.description}</div>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <span style={{ fontSize:11, color:T.textMute }}>{list.albums.length} álbumes</span>
+            <span style={{ fontSize:11, color:T.accent, fontWeight:600 }}>Ver lista →</span>
+          </div>
+        </div>
       </div>
-      <div style={{ fontSize:15, fontWeight:700, color:T.text, marginBottom:3 }}>{list.name}</div>
-      <div style={{ fontSize:12, color:T.textSub }}>{list.description}</div>
-      <div style={{ fontSize:11, color:T.textMute, marginTop:6 }}>{list.albums.length} álbumes</div>
-    </div>
-  );
+    );
+  };
 
   const UserListCard = ({ list }) => {
     const count = list.list_albums?.[0]?.count || 0;
     return (
       <div onClick={()=>onNavigate("list", list.id)}
-        style={{ background:T.surface, borderRadius:16, padding:"16px", border:`1px solid ${T.border}`, cursor:"pointer", transition:"border-color 0.15s", marginBottom:10, display:"flex", gap:14, alignItems:"center" }}
-        onMouseEnter={e=>e.currentTarget.style.borderColor=T.accent}
-        onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
-        <div style={{ width:52, height:52, borderRadius:10, background:`linear-gradient(135deg,${T.accent}44,${T.accent2}44)`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0 }}>📋</div>
-        <div style={{ flex:1 }}>
+        style={{ background:T.surface, borderRadius:16, padding:"14px 16px", border:`1px solid ${T.border}`, cursor:"pointer", transition:"all 0.15s", marginBottom:10, display:"flex", gap:12, alignItems:"center" }}
+        onMouseEnter={e=>{ e.currentTarget.style.borderColor=T.accent; e.currentTarget.style.transform="translateY(-1px)"; }}
+        onMouseLeave={e=>{ e.currentTarget.style.borderColor=T.border; e.currentTarget.style.transform="translateY(0)"; }}>
+        <div style={{ width:48, height:48, borderRadius:12, background:`linear-gradient(135deg,${T.accent}33,${T.accent2}33)`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>📋</div>
+        <div style={{ flex:1, minWidth:0 }}>
           <div style={{ fontSize:14, fontWeight:700, color:T.text }}>{list.name}</div>
-          {list.description && <div style={{ fontSize:12, color:T.textSub, marginTop:1 }}>{list.description}</div>}
+          {list.description && <div style={{ fontSize:12, color:T.textSub, marginTop:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{list.description}</div>}
           <div style={{ fontSize:11, color:T.textMute, marginTop:3 }}>{count} álbum{count!==1?"es":""}</div>
         </div>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.textMute} strokeWidth="2"><polyline points="9,18 15,12 9,6"/></svg>
@@ -2424,16 +2456,18 @@ function ListsPage({ userId, onNavigate }) {
       <div style={{ maxWidth:560, margin:"0 auto", padding:"20px 20px 0" }}>
         {loading ? <Spinner/> : (
           <>
-            {/* Auto lists */}
+            {/* Auto lists — grid de 2 columnas */}
             {autoLists.length > 0 && (
-              <div style={{ marginBottom:24 }}>
-                <div style={{ fontSize:11, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:12 }}>LISTAS AUTOMÁTICAS</div>
-                {autoLists.map(l => <AutoListCard key={l.id} list={l}/>)}
+              <div style={{ marginBottom:28 }}>
+                <div style={{ fontSize:11, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:14 }}>LISTAS AUTOMÁTICAS</div>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+                  {autoLists.map(l => <AutoListCard key={l.id} list={l}/>)}
+                </div>
               </div>
             )}
             {/* My lists */}
             <div>
-              <div style={{ fontSize:11, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:12 }}>MIS LISTAS</div>
+              <div style={{ fontSize:11, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:14 }}>MIS LISTAS</div>
               {myLists.length===0 ? (
                 <div style={{ textAlign:"center", padding:"32px 20px", background:T.surface, borderRadius:16, border:`1.5px dashed ${T.border}` }}>
                   <div style={{ fontSize:32, marginBottom:8 }}>📋</div>
@@ -2916,46 +2950,62 @@ function GenreChips({ onNavigate }) {
 
 // ─── TRENDING ────────────────────────────────────────────────────────────────
 function TrendingSection({ onNavigate }) {
-  const [trending, setTrending] = useState([]);
+  const [tab, setTab] = useState("week");
+  const [weekData, setWeekData] = useState([]);
+  const [allTimeData, setAllTimeData] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const weekAgo = new Date(Date.now() - 7*24*60*60*1000).toISOString();
-    supabase.from("feed_reviews").select("album_id,album_title,artist,cover_url,year")
-      .gte("created_at", weekAgo).limit(100)
+    supabase.from("feed_reviews").select("album_id,album_title,artist,cover_url,year,rating,created_at").limit(300)
       .then(({data}) => {
-        const counts = {};
-        const meta = {};
-        (data||[]).forEach(r => { counts[r.album_id]=(counts[r.album_id]||0)+1; meta[r.album_id]=r; });
-        const top = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([id,n])=>({...meta[id],count:n}));
-        setTrending(top); setLoading(false);
+        const all = data || [];
+        const weekAgo = new Date(Date.now() - 7*24*60*60*1000).toISOString();
+        const build = (reviews, n=8) => {
+          const counts = {}; const meta = {};
+          reviews.forEach(r => { counts[r.album_id]=(counts[r.album_id]||0)+1; meta[r.album_id]=r; });
+          return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,n).map(([id,n])=>({...meta[id],count:n}));
+        };
+        setWeekData(build(all.filter(r=>r.created_at>=weekAgo)));
+        setAllTimeData(build(all));
+        setLoading(false);
       });
   }, []);
 
-  if (loading || trending.length===0) return null;
+  const current = tab === "week" ? weekData : allTimeData;
+  if (loading) return null;
 
   return (
-    <div style={{ marginTop:20 }}>
-      <div style={{ fontSize:11, fontWeight:700, color:T.textMute, letterSpacing:0.5, marginBottom:10 }}>🔥 TRENDING ESTA SEMANA</div>
-      <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-        {trending.map((a,i) => {
-          const ac = accentFor(a.album_id);
-          return (
-            <div key={a.album_id} onClick={()=>onNavigate("album",a.album_id)}
-              style={{ display:"flex", gap:12, alignItems:"center", background:T.surface, borderRadius:12, padding:"10px 12px", border:`1px solid ${T.border}`, cursor:"pointer", transition:"border-color 0.15s", animation:`fadeUp 0.3s ease ${i*0.05}s both` }}
-              onMouseEnter={e=>e.currentTarget.style.borderColor=T.textMute}
-              onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
-              <div style={{ fontSize:16, fontWeight:800, color:T.textMute, width:20, flexShrink:0, textAlign:"center" }}>{i+1}</div>
-              <AlbumCover src={a.cover_url} ac={ac} size={44}/>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:13, fontWeight:600, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{a.album_title}</div>
-                <div style={{ fontSize:11, color:T.textSub }}>{a.artist}</div>
-              </div>
-              <div style={{ fontSize:11, color:T.accent, fontWeight:700, flexShrink:0 }}>{a.count} reseña{a.count!==1?"s":""}</div>
-            </div>
-          );
-        })}
+    <div style={{ marginTop:8 }}>
+      <div style={{ display:"flex", gap:0, marginBottom:12, background:T.surface2, borderRadius:12, padding:3 }}>
+        {[{key:"week",label:"🔥 Esta semana"},{key:"all",label:"🏆 Todos los tiempos"}].map(t=>(
+          <button key={t.key} onClick={()=>setTab(t.key)}
+            style={{ flex:1, padding:"7px 0", background:tab===t.key?T.surface:"none", border:"none", borderRadius:10, color:tab===t.key?T.text:T.textMute, fontSize:12, fontWeight:tab===t.key?700:400, cursor:"pointer", transition:"all 0.15s" }}>
+            {t.label}
+          </button>
+        ))}
       </div>
+      {current.length === 0
+        ? <div style={{ textAlign:"center", padding:"32px 0", color:T.textMute, fontSize:13 }}>Todavía no hay reseñas</div>
+        : <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+          {current.map((a,i) => {
+            const ac = accentFor(a.album_id);
+            return (
+              <div key={a.album_id} onClick={()=>onNavigate("album",a.album_id)}
+                style={{ display:"flex", gap:12, alignItems:"center", background:T.surface, borderRadius:12, padding:"10px 12px", border:`1px solid ${T.border}`, cursor:"pointer", transition:"border-color 0.15s", animation:`fadeUp 0.25s ease ${i*0.04}s both` }}
+                onMouseEnter={e=>e.currentTarget.style.borderColor=T.accent}
+                onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+                <div style={{ fontSize:15, fontWeight:800, color:i<3?T.accent:T.textMute, width:22, flexShrink:0, textAlign:"center" }}>{i+1}</div>
+                <AlbumCover src={a.cover_url} ac={ac} size={44}/>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:13, fontWeight:600, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{a.album_title}</div>
+                  <div style={{ fontSize:11, color:T.textSub }}>{a.artist}</div>
+                </div>
+                <div style={{ fontSize:11, color:T.accent, fontWeight:700, flexShrink:0 }}>{a.count} reseña{a.count!==1?"s":""}</div>
+              </div>
+            );
+          })}
+        </div>
+      }
     </div>
   );
 }
