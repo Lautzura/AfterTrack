@@ -966,6 +966,74 @@ function ShareModal({ review, onClose }) {
   );
 }
 
+// ─── FAVORITE TRACK PLAYER ───────────────────────────────────────────────────
+function FavoriteTrackPlayer({ trackTitle, albumMbid, ac }) {
+  const [playing, setPlaying] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [progress, setProgress] = useState(0);
+  const audioRef = useRef(null);
+  const intervalRef = useRef(null);
+
+  const fetchPreview = async () => {
+    if (previewUrl) return previewUrl;
+    setLoading(true);
+    try {
+      const data = await fetchSpotifyAlbum(albumMbid);
+      const track = (data.tracklist||[]).find(t =>
+        t.title?.toLowerCase() === trackTitle?.toLowerCase()
+      );
+      const url = track?.previewUrl || null;
+      setPreviewUrl(url);
+      setLoading(false);
+      return url;
+    } catch { setLoading(false); return null; }
+  };
+
+  const togglePlay = async (e) => {
+    e.stopPropagation();
+    if (loading) return;
+    if (playing) {
+      audioRef.current?.pause();
+      clearInterval(intervalRef.current);
+      setPlaying(false);
+      return;
+    }
+    document.querySelectorAll("audio").forEach(a => a.pause());
+    const url = await fetchPreview();
+    if (!url) return;
+    if (!audioRef.current) audioRef.current = new Audio(url);
+    else audioRef.current.src = url;
+    audioRef.current.play();
+    setPlaying(true);
+    setProgress(0);
+    intervalRef.current = setInterval(() => {
+      if (!audioRef.current) return;
+      const pct = (audioRef.current.currentTime / (audioRef.current.duration||30)) * 100;
+      setProgress(pct);
+      if (audioRef.current.ended) { setPlaying(false); setProgress(0); clearInterval(intervalRef.current); }
+    }, 200);
+  };
+
+  useEffect(() => () => { audioRef.current?.pause(); clearInterval(intervalRef.current); }, []);
+
+  return (
+    <div onClick={e=>e.stopPropagation()} style={{ display:"flex", alignItems:"center", gap:6, padding:"5px 8px", background:`${ac}18`, borderRadius:8, position:"relative", overflow:"hidden" }}>
+      <span style={{ fontSize:11 }}>⭐</span>
+      <span style={{ fontSize:11, color:ac, fontWeight:700, flex:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{trackTitle}</span>
+      <button onClick={togglePlay}
+        style={{ flexShrink:0, width:24, height:24, borderRadius:"50%", background:playing?ac:`${ac}33`, border:`1.5px solid ${ac}`, display:"flex", alignItems:"center", justifyContent:"center", cursor:loading?"wait":"pointer", fontSize:10, color:playing?"#fff":ac, transition:"all 0.15s" }}>
+        {loading ? "…" : playing ? "⏸" : "▶"}
+      </button>
+      {playing && (
+        <div style={{ position:"absolute", bottom:0, left:0, right:0, height:2, background:`${ac}22` }}>
+          <div style={{ height:"100%", width:`${progress}%`, background:ac, transition:"width 0.2s" }}/>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── REVIEW CARD ─────────────────────────────────────────────────────────────
 function ReviewCard({ r, i, onNavigate }) {
   const ac = accentFor(r.album_id);
@@ -1040,14 +1108,11 @@ function ReviewCard({ r, i, onNavigate }) {
             {(r.favorite_track || (trackReviews && trackReviews.length > 0)) && (
               <div style={{ borderTop:`1px solid ${ac}22`, paddingTop:8 }}>
                 {r.favorite_track && (
-                  <div style={{ display:"flex", alignItems:"center", gap:5, padding:"4px 8px", background:`${T.accent}18`, borderRadius:8, marginBottom: trackReviews?.length>0?6:0 }}>
-                    <span style={{ fontSize:11 }}>⭐</span>
-                    <span style={{ fontSize:11, color:T.accent, fontWeight:700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{r.favorite_track}</span>
-                  </div>
+                  <FavoriteTrackPlayer trackTitle={r.favorite_track} albumMbid={r.mbid} ac={T.accent}/>
                 )}
                 {trackReviews && trackReviews.length > 0 && (
                   <button onClick={e=>{ e.stopPropagation(); setShowDetail(true); }}
-                    style={{ fontSize:11, color:T.accent, background:"none", border:`1px solid ${T.accent}33`, borderRadius:8, padding:"4px 0", cursor:"pointer", width:"100%" }}>
+                    style={{ fontSize:11, color:T.accent, background:"none", border:`1px solid ${T.accent}33`, borderRadius:8, padding:"4px 0", cursor:"pointer", width:"100%", marginTop: r.favorite_track?6:0 }}>
                     Ver {trackReviews.length} canciones puntuadas
                   </button>
                 )}
