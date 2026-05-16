@@ -3076,7 +3076,7 @@ function ProfileReviewSearch({ reviews, onNavigate, isOwnProfile, onEdit, onDele
           <div style={{ fontSize:24, marginBottom:6 }}>🔍</div>
           <div style={{ fontSize:13 }}>Sin resultados para "{q}"</div>
         </div>
-      )): filtered.map((r,i) => (
+      ) : filtered.map((r,i) => (
         <div key={r.id} style={{ marginBottom: isOwnProfile ? 4 : 0 }}>
           <ReviewCard r={r} i={i} onNavigate={onNavigate}/>
           {isOwnProfile && (
