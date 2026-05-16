@@ -675,7 +675,7 @@ function WriteModal({ onClose, onAdd, onNavigate, preselectedAlbum=null }) {
                 <div style={{ display:"flex", flexDirection:"column", gap:6, maxHeight:200, overflowY:"auto", paddingRight:4 }}>
                   {tracklist.map(track => (
                     <div key={track.number} style={{ display:"flex", alignItems:"center", gap:10, padding:"7px 10px", background:T.surface2, borderRadius:10, border:`1px solid ${trackRatings[track.number]>0?T.accent+"44":T.border}` }}>
-                      <span style={{ fontSize:11, color:T.textMute, width:18, flexShrink:0, textAlign:"right" }}>{track.number}.</span>
+                      <DeezerPlayButton trackTitle={track.title} artist={selected?.artist} size={22}/>
                       <span style={{ fontSize:13, color:favoriteTrack===track.title?T.accent:T.text, flex:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", fontWeight:favoriteTrack===track.title?700:400 }}>
                         {favoriteTrack===track.title?"⭐ ":""}{track.title}
                       </span>
@@ -752,8 +752,82 @@ function TrackReviewModal({ track, albumId, existing, onClose, onSave }) {
   );
 }
 
+// ─── DEEZER PLAY BUTTON ──────────────────────────────────────────────────────
+function DeezerPlayButton({ trackTitle, artist, size=28 }) {
+  const [playing, setPlaying] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState(undefined);
+  const [progress, setProgress] = useState(0);
+  const audioRef = useRef(null);
+  const intervalRef = useRef(null);
+
+  const fetchAndPlay = async () => {
+    if (loading) return;
+    if (playing) {
+      audioRef.current?.pause();
+      clearInterval(intervalRef.current);
+      setPlaying(false);
+      return;
+    }
+    document.querySelectorAll("audio").forEach(a => a.pause());
+    if (window._currentDeezerStop) window._currentDeezerStop();
+
+    let url = previewUrl;
+    if (url === undefined) {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({ track: trackTitle });
+        if (artist) params.set("artist", artist);
+        const res = await fetch(`/api/deezer?${params}`);
+        const data = await res.json();
+        url = data.previewUrl || null;
+        setPreviewUrl(url);
+      } catch { url = null; setPreviewUrl(null); }
+      setLoading(false);
+    }
+    if (!url) return;
+
+    if (!audioRef.current) audioRef.current = new Audio(url);
+    else audioRef.current.src = url;
+    audioRef.current.play();
+    setPlaying(true);
+    setProgress(0);
+
+    window._currentDeezerStop = () => {
+      audioRef.current?.pause();
+      clearInterval(intervalRef.current);
+      setPlaying(false);
+      setProgress(0);
+    };
+
+    intervalRef.current = setInterval(() => {
+      if (!audioRef.current) return;
+      const pct = (audioRef.current.currentTime / (audioRef.current.duration||30)) * 100;
+      setProgress(pct);
+      if (audioRef.current.ended) { setPlaying(false); setProgress(0); clearInterval(intervalRef.current); }
+    }, 200);
+  };
+
+  useEffect(() => () => { audioRef.current?.pause(); clearInterval(intervalRef.current); }, []);
+
+  return (
+    <div style={{ position:"relative", width:size, height:size, flexShrink:0 }}>
+      <button onClick={fetchAndPlay}
+        style={{ width:size, height:size, borderRadius:"50%", background:playing?T.accent:`${T.accent}22`, border:`1.5px solid ${playing?T.accent:T.border}`, display:"flex", alignItems:"center", justifyContent:"center", cursor:loading?"wait":"pointer", fontSize:size*0.38, color:playing?"#fff":T.textSub, transition:"all 0.15s" }}>
+        {loading ? "…" : playing ? "⏸" : "▶"}
+      </button>
+      {playing && (
+        <svg style={{ position:"absolute", inset:-2, transform:"rotate(-90deg)", pointerEvents:"none" }} width={size+4} height={size+4} viewBox={`0 0 ${size+4} ${size+4}`}>
+          <circle cx={(size+4)/2} cy={(size+4)/2} r={size/2} fill="none" stroke={T.accent} strokeWidth="2"
+            strokeDasharray={Math.PI*size} strokeDashoffset={Math.PI*size*(1-progress/100)} strokeLinecap="round"/>
+        </svg>
+      )}
+    </div>
+  );
+}
+
 // ─── TRACKLIST ────────────────────────────────────────────────────────────────
-function Tracklist({ albumId, mbid, userId, trackPreviews={} }) {
+function Tracklist({ albumId, mbid, userId, artist="" }) {
   const [tracks, setTracks] = useState([]);
   const [myReviews, setMyReviews] = useState({});
   const [loading, setLoading] = useState(true);
@@ -780,11 +854,6 @@ function Tracklist({ albumId, mbid, userId, trackPreviews={} }) {
     setMyReviews(map);
   };
 
-  const getTrackPreview = (track) => {
-    // Try by track number first, then by title
-    return trackPreviews[`track_${track.number}`] || trackPreviews[track.title?.toLowerCase()] || null;
-  };
-
   if (loading) return <Spinner/>;
   if (tracks.length===0) return (
     <div style={{ textAlign:"center", padding:"32px 0", color:T.textMute }}>
@@ -807,11 +876,7 @@ function Tracklist({ albumId, mbid, userId, trackPreviews={} }) {
         return (
           <div key={track.number}
             style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 0", borderBottom:`1px solid ${T.border}`, animation:`fadeUp 0.3s ease ${i*0.03}s both` }}>
-            {/* Play button or track number */}
-            {getTrackPreview(track)
-              ? <PlayButton previewUrl={getTrackPreview(track)} size={28}/>
-              : <div style={{ width:28, textAlign:"right", fontSize:13, color:T.textMute, flexShrink:0 }}>{track.number}</div>
-            }
+            <DeezerPlayButton trackTitle={track.title} artist={artist} size={28}/>
             <div style={{ flex:1, minWidth:0 }}>
               <div style={{ fontSize:14, fontWeight:review?600:400, color:review?T.text:T.textSub, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{track.title}</div>
               {review && <div style={{ marginTop:3 }}><Stars n={review.rating} size={11}/></div>}
@@ -1687,7 +1752,7 @@ function AlbumPage({ albumId, onNavigate, userId }) {
         {/* Canciones tab */}
         {tab==="canciones" && (
           <div style={{ background:T.surface, borderRadius:16, padding:"8px 16px", border:`1px solid ${T.border}`, marginBottom:40 }}>
-            <Tracklist albumId={albumId} mbid={album.mbid} userId={userId} trackPreviews={trackPreviews}/>
+            <Tracklist albumId={albumId} mbid={album.mbid} userId={userId} artist={album.artist||""}/>
           </div>
         )}
 
