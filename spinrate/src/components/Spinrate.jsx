@@ -1273,6 +1273,7 @@ function ReviewCard({ r, i, onNavigate }) {
 function FeedPage({ onNavigate, onWrite, refreshKey, userId }) {
   const [tab, setTab] = useState("recientes");
   const [reviews, setReviews] = useState([]);
+  const [followingIds, setFollowingIds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ genre:null, minRating:null, year:null });
   const [isDark, setIsDark] = useState(true);
@@ -1289,11 +1290,19 @@ function FeedPage({ onNavigate, onWrite, refreshKey, userId }) {
     } catch {}
   }, []);
 
+  // Cargar lista de seguidos
+  useEffect(() => {
+    if (!userId) return;
+    supabase.from("follows").select("following_id").eq("follower_id", userId)
+      .then(({data}) => setFollowingIds((data||[]).map(f=>f.following_id)));
+  }, [userId]);
+
   const loadReviews = () => {
     setLoading(true);
     let query = supabase.from("feed_reviews").select("*");
     if (tab === "recientes") query = query.order("created_at", {ascending:false}).limit(50);
     else if (tab === "populares") query = query.order("like_count", {ascending:false}).limit(50);
+    else if (tab === "siguiendo") query = query.order("created_at", {ascending:false}).limit(100);
     query.then(({data}) => { setReviews(data||[]); setLoading(false); setRefreshing(false); });
   };
 
@@ -1313,6 +1322,7 @@ function FeedPage({ onNavigate, onWrite, refreshKey, userId }) {
   };
 
   const filtered = reviews.filter(r => {
+    if (tab === "siguiendo" && !followingIds.includes(r.user_id)) return false;
     if (filters.genre && !(r.tags||[]).includes(filters.genre)) return false;
     if (filters.minRating && Number(r.rating) < filters.minRating) return false;
     return true;
@@ -1338,7 +1348,7 @@ function FeedPage({ onNavigate, onWrite, refreshKey, userId }) {
           </div>
           {/* Tabs */}
           <div style={{ display:"flex", gap:0, borderTop:`1px solid ${T.border}`, marginTop:0 }}>
-            {[{key:"recientes",label:"Recientes"},{key:"populares",label:"Populares"}].map(t => (
+            {[{key:"recientes",label:"Recientes"},{key:"siguiendo",label:"Siguiendo"},{key:"populares",label:"Populares"}].map(t => (
               <button key={t.key} onClick={()=>setTab(t.key)}
                 style={{ flex:1, padding:"10px 0", background:"none", border:"none", borderBottom:`2px solid ${tab===t.key?T.accent:"transparent"}`, color:tab===t.key?T.accent:T.textMute, fontSize:13, fontWeight:tab===t.key?700:400, cursor:"pointer", transition:"all 0.15s" }}>
                 {t.label}
@@ -1359,8 +1369,20 @@ function FeedPage({ onNavigate, onWrite, refreshKey, userId }) {
         <FeedFilters filters={filters} onChange={setFilters}/>
         {loading ? <FeedSkeleton/> : filtered.length===0 ? (
           <div style={{ textAlign:"center", padding:"60px 20px" }}>
-            <div style={{ fontSize:36, marginBottom:10 }}>🎵</div>
-            <div style={{ fontSize:14, color:T.textSub, fontWeight:600 }}>{reviews.length===0?"Todavía no hay reseñas":"Sin resultados para estos filtros"}</div>
+            <div style={{ fontSize:36, marginBottom:10 }}>{tab==="siguiendo"?"👥":"🎵"}</div>
+            <div style={{ fontSize:14, color:T.textSub, fontWeight:600, marginBottom:8 }}>
+              {tab==="siguiendo"
+                ? followingIds.length===0
+                  ? "Todavía no seguís a nadie"
+                  : "Las personas que seguís no reseñaron nada aún"
+                : reviews.length===0?"Todavía no hay reseñas":"Sin resultados para estos filtros"
+              }
+            </div>
+            {tab==="siguiendo" && followingIds.length===0 && (
+              <button onClick={()=>onNavigate("search")} style={{ background:`linear-gradient(135deg,${T.accent},${T.accent2})`, border:"none", borderRadius:20, padding:"9px 22px", color:"#fff", fontSize:13, fontWeight:600, cursor:"pointer" }}>
+                Buscar usuarios
+              </button>
+            )}
           </div>
         ) : (
           <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
