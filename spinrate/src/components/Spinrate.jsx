@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '@/lib/supabase';
 
 // ─── FONT ─────────────────────────────────────────────────────────────────────
@@ -1083,45 +1084,48 @@ function ReviewCard({ r, i, onNavigate }) {
       </div>
       {showComments && <CommentsModal review={r} onClose={()=>setShowComments(false)}/>}
       {showShare && <ShareModal review={r} onClose={()=>setShowShare(false)}/>}
-      {showDetail && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:200, backdropFilter:"blur(8px)" }}
-          onClick={e=>{ if(e.target===e.currentTarget) setShowDetail(false); }}>
-          <div style={{ background:T.surface, borderRadius:"20px 20px 0 0", width:"100%", maxWidth:560, border:`1px solid ${T.border}`, borderBottom:"none", maxHeight:"80vh", display:"flex", flexDirection:"column" }}>
-            <div style={{ display:"flex", justifyContent:"center", padding:"12px 0 0" }}>
-              <div style={{ width:36, height:4, borderRadius:2, background:T.border }}/>
-            </div>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 20px 8px" }}>
-              <div>
-                <div style={{ fontSize:16, fontWeight:700, color:T.text }}>{r.album_title}</div>
-                <div style={{ fontSize:12, color:T.textSub }}>{r.artist} · reseña de {r.display_name||r.username}</div>
+      {showDetail && typeof document !== "undefined" && (() => {
+        const el = (
+          <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:999, backdropFilter:"blur(8px)" }}
+            onClick={e=>{ if(e.target===e.currentTarget) setShowDetail(false); }}>
+            <div style={{ background:T.surface, borderRadius:"20px 20px 0 0", width:"100%", maxWidth:560, border:`1px solid ${T.border}`, borderBottom:"none", maxHeight:"75vh", display:"flex", flexDirection:"column" }}>
+              <div style={{ display:"flex", justifyContent:"center", padding:"12px 0 0" }}>
+                <div style={{ width:36, height:4, borderRadius:2, background:T.border }}/>
               </div>
-              <button onClick={()=>setShowDetail(false)} style={{ background:T.surface2, border:`1px solid ${T.border}`, borderRadius:"50%", width:28, height:28, cursor:"pointer", fontSize:15, color:T.textSub, display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
-            </div>
-            {r.favorite_track && (
-              <div style={{ margin:"0 20px 10px", display:"flex", alignItems:"center", gap:6, padding:"8px 12px", background:`${T.accent}15`, borderRadius:10, border:`1px solid ${T.accent}33` }}>
-                <span>⭐</span>
-                <span style={{ fontSize:12, color:T.textMute, fontWeight:600 }}>Favorita:</span>
-                <span style={{ fontSize:13, color:T.accent, fontWeight:700 }}>{r.favorite_track}</span>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 20px 8px" }}>
+                <div>
+                  <div style={{ fontSize:16, fontWeight:700, color:T.text }}>{r.album_title}</div>
+                  <div style={{ fontSize:12, color:T.textSub }}>{r.artist} · reseña de {r.display_name||r.username}</div>
+                </div>
+                <button onClick={()=>setShowDetail(false)} style={{ background:T.surface2, border:`1px solid ${T.border}`, borderRadius:"50%", width:28, height:28, cursor:"pointer", fontSize:15, color:T.textSub, display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
               </div>
-            )}
-            <div style={{ flex:1, overflowY:"auto", padding:"0 20px 24px" }}>
-              {(trackReviews||[]).length === 0
-                ? <div style={{ textAlign:"center", padding:"32px 0", color:T.textMute, fontSize:13 }}>No hay canciones puntuadas</div>
-                : (trackReviews||[]).map(tr => (
-                  <div key={tr.track_number} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 0", borderBottom:`1px solid ${T.border}` }}>
-                    <span style={{ fontSize:12, color:T.textMute, width:20, flexShrink:0, textAlign:"right" }}>{tr.track_number}.</span>
-                    <span style={{ fontSize:14, color:r.favorite_track===tr.track_title?T.accent:T.text, flex:1, fontWeight:r.favorite_track===tr.track_title?700:400 }}>
-                      {r.favorite_track===tr.track_title?"⭐ ":""}{tr.track_title}
-                    </span>
-                    <Stars n={tr.rating} size={14}/>
-                    <span style={{ fontSize:12, color:T.textSub, minWidth:24, textAlign:"right" }}>{tr.rating}</span>
-                  </div>
-                ))
-              }
+              {r.favorite_track && (
+                <div style={{ margin:"0 20px 10px", display:"flex", alignItems:"center", gap:6, padding:"8px 12px", background:`${T.accent}18`, borderRadius:10, border:`1px solid ${T.accent}44` }}>
+                  <span style={{ fontSize:14 }}>⭐</span>
+                  <span style={{ fontSize:12, color:T.textMute, fontWeight:600 }}>Favorita:</span>
+                  <span style={{ fontSize:13, color:T.accent, fontWeight:700 }}>{r.favorite_track}</span>
+                </div>
+              )}
+              <div style={{ flex:1, overflowY:"auto", padding:"0 20px 24px" }}>
+                {(trackReviews||[]).length === 0
+                  ? <div style={{ textAlign:"center", padding:"32px 0", color:T.textMute, fontSize:13 }}>No hay canciones puntuadas</div>
+                  : (trackReviews||[]).map(tr => (
+                    <div key={tr.track_number} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 0", borderBottom:`1px solid ${T.border}` }}>
+                      <span style={{ fontSize:12, color:T.textMute, width:20, flexShrink:0, textAlign:"right" }}>{tr.track_number}.</span>
+                      <span style={{ fontSize:14, color:r.favorite_track===tr.track_title?T.accent:T.text, flex:1, fontWeight:r.favorite_track===tr.track_title?700:400 }}>
+                        {r.favorite_track===tr.track_title?"⭐ ":""}{tr.track_title}
+                      </span>
+                      <Stars n={tr.rating} size={14}/>
+                      <span style={{ fontSize:12, color:T.textSub, minWidth:24, textAlign:"right" }}>{tr.rating}</span>
+                    </div>
+                  ))
+                }
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+        return createPortal(el, document.body);
+      })()}
     </>
   );
 }
@@ -2539,30 +2543,23 @@ function MesDelAlbumBanner({ onNavigate }) {
   const monthName = now.toLocaleDateString("es-AR",{month:"long", year:"numeric"});
 
   useEffect(() => {
-    // Get most voted album this month from reviews
-    supabase.from("feed_reviews").select("album_id,album_title,artist,cover_url,year")
+    supabase.from("feed_reviews").select("album_id,album_title,artist,cover_url,year,rating")
       .gte("created_at", new Date(now.getFullYear(), now.getMonth(), 1).toISOString())
-      .limit(100)
+      .limit(200)
       .then(({data}) => {
         if (!data || data.length===0) { setLoading(false); return; }
-        const counts = {};
-        const meta = {};
-        data.forEach(r => {
-          counts[r.album_id] = (counts[r.album_id]||0)+1;
-          meta[r.album_id] = r;
-        });
-        const top = Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
-        if (top) { setAlbum(meta[top[0]]); setVotes(top[1]); }
+        const counts = {}; const meta = {};
+        data.forEach(r => { counts[r.album_id]=(counts[r.album_id]||0)+1; meta[r.album_id]=r; });
+        const sorted = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+        if (sorted[0]) { setAlbum(meta[sorted[0][0]]); setVotes(sorted[0][1]); }
         setLoading(false);
       });
-    const savedVote = localStorage.getItem ? localStorage.getItem(`voted_${monthKey}`) : null;
-    setVoted(!!savedVote);
+    try { setVoted(!!localStorage.getItem(`voted_${monthKey}`)); } catch {}
   }, []);
 
   const vote = () => {
     if (voted || !album) return;
-    setVoted(true);
-    setVotes(v=>v+1);
+    setVoted(true); setVotes(v=>v+1);
     try { localStorage.setItem(`voted_${monthKey}`, "1"); } catch {}
   };
 
@@ -2570,19 +2567,43 @@ function MesDelAlbumBanner({ onNavigate }) {
   const ac = accentFor(album.album_id);
 
   return (
-    <div style={{ background:`linear-gradient(135deg,${ac}22,${T.accent}11)`, borderRadius:16, border:`1px solid ${ac}44`, padding:"16px", marginBottom:16, display:"flex", gap:14, alignItems:"center" }}>
-      <div onClick={()=>onNavigate("album",album.album_id)} style={{ cursor:"pointer", flexShrink:0 }}>
-        <AlbumCover src={album.cover_url} ac={ac} size={64}/>
+    <div style={{ borderRadius:16, border:`1px solid ${T.border}`, marginBottom:16, overflow:"hidden", background:T.surface }}>
+      {/* Header */}
+      <div style={{ padding:"10px 14px 8px", background:`linear-gradient(90deg,${ac}22,${T.accent}11)`, borderBottom:`1px solid ${T.border}` }}>
+        <div style={{ fontSize:10, fontWeight:700, color:ac, letterSpacing:0.8 }}>🏆 ÁLBUM DEL MES · {monthName.toUpperCase()}</div>
       </div>
-      <div style={{ flex:1, minWidth:0 }}>
-        <div style={{ fontSize:10, fontWeight:700, color:ac, letterSpacing:0.5, marginBottom:4 }}>🏆 ÁLBUM DEL MES · {monthName.toUpperCase()}</div>
-        <div onClick={()=>onNavigate("album",album.album_id)} style={{ fontSize:15, fontWeight:700, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", cursor:"pointer" }}>{album.album_title}</div>
-        <div style={{ fontSize:12, color:T.textSub }}>{album.artist} · {votes} reseña{votes!==1?"s":""}</div>
+      {/* Auto candidate */}
+      <div style={{ padding:"12px 14px", borderBottom:`1px solid ${T.border}` }}>
+        <div style={{ fontSize:10, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:8 }}>📈 MÁS RESEÑADO</div>
+        <div style={{ display:"flex", gap:12, alignItems:"center" }}>
+          <div onClick={()=>onNavigate("album",album.album_id)} style={{ cursor:"pointer", flexShrink:0 }}>
+            <AlbumCover src={album.cover_url} ac={ac} size={52}/>
+          </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div onClick={()=>onNavigate("album",album.album_id)} style={{ fontSize:14, fontWeight:700, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", cursor:"pointer" }}>{album.album_title}</div>
+            <div style={{ fontSize:12, color:T.textSub }}>{album.artist} · {votes} reseña{votes!==1?"s":""}</div>
+          </div>
+          <button onClick={vote} disabled={voted}
+            style={{ flexShrink:0, padding:"7px 14px", background:voted?`${ac}22`:`linear-gradient(135deg,${ac},${T.accent})`, border:`1px solid ${voted?ac+"44":ac}`, borderRadius:20, color:voted?"#fff":"#fff", fontSize:12, fontWeight:700, cursor:voted?"default":"pointer", opacity:voted?0.7:1 }}>
+            {voted?"✓ Votado":"Votar"}
+          </button>
+        </div>
       </div>
-      <button onClick={vote} disabled={voted}
-        style={{ flexShrink:0, padding:"8px 14px", background:voted?`${ac}22`:`linear-gradient(135deg,${ac},${T.accent})`, border:`1px solid ${voted?ac+"44":ac}`, borderRadius:20, color:voted?ac:"#fff", fontSize:12, fontWeight:700, cursor:voted?"default":"pointer" }}>
-        {voted?"✓ Votado":"Votar"}
-      </button>
+      {/* Community nomination */}
+      <div style={{ padding:"12px 14px" }}>
+        <div style={{ fontSize:10, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:8 }}>🗳️ NOMINÁ UN ÁLBUM</div>
+        <div style={{ display:"flex", gap:8 }}>
+          <input
+            placeholder="Buscá un álbum para nominar..."
+            style={{ flex:1, background:T.surface2, border:`1px solid ${T.border}`, borderRadius:10, padding:"8px 12px", fontSize:12, color:T.text, outline:"none" }}
+            onFocus={e=>e.target.style.borderColor=T.accent}
+            onBlur={e=>e.target.style.borderColor=T.border}
+            onKeyDown={e=>{ if(e.key==="Enter" && e.target.value.trim()) { alert(`"${e.target.value}" nominado! 🎵`); e.target.value=""; }}}
+          />
+          <button style={{ background:`linear-gradient(135deg,${T.accent},${T.accent2})`, border:"none", borderRadius:10, padding:"8px 14px", color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer" }}>+</button>
+        </div>
+        <div style={{ fontSize:11, color:T.textMute, marginTop:6 }}>Presioná Enter o + para nominar</div>
+      </div>
     </div>
   );
 }
@@ -3055,13 +3076,13 @@ function ProfileReviewSearch({ reviews, onNavigate, isOwnProfile, onEdit, onDele
           <div style={{ fontSize:24, marginBottom:6 }}>🔍</div>
           <div style={{ fontSize:13 }}>Sin resultados para "{q}"</div>
         </div>
-      ) : filtered.map((r,i) => (
-        <div key={r.id} style={{ position:"relative" }}>
+      )): filtered.map((r,i) => (
+        <div key={r.id} style={{ marginBottom: isOwnProfile ? 4 : 0 }}>
           <ReviewCard r={r} i={i} onNavigate={onNavigate}/>
           {isOwnProfile && (
-            <div style={{ position:"absolute", top:12, right:12, display:"flex", gap:6 }}>
-              <button onClick={()=>onEdit(r)} style={{ background:T.surface2, border:`1px solid ${T.border}`, borderRadius:8, padding:"4px 10px", fontSize:11, color:T.textSub, cursor:"pointer" }}>Editar</button>
-              <button onClick={()=>onDelete(r.id)} style={{ background:`${T.like}18`, border:`1px solid ${T.like}44`, borderRadius:8, padding:"4px 10px", fontSize:11, color:T.like, cursor:"pointer" }}>Borrar</button>
+            <div style={{ display:"flex", gap:6, justifyContent:"flex-end", padding:"6px 4px 10px" }}>
+              <button onClick={()=>onEdit(r)} style={{ background:T.surface2, border:`1px solid ${T.border}`, borderRadius:8, padding:"5px 14px", fontSize:11, color:T.textSub, cursor:"pointer", fontWeight:600 }}>Editar</button>
+              <button onClick={()=>onDelete(r.id)} style={{ background:`${T.like}18`, border:`1px solid ${T.like}44`, borderRadius:8, padding:"5px 14px", fontSize:11, color:T.like, cursor:"pointer", fontWeight:600 }}>Borrar</button>
             </div>
           )}
         </div>
@@ -3140,7 +3161,7 @@ export default function Aftertrack() {
       {page.name==="autolist" && <AutoListPage list={page.data} onNavigate={navigate}/>}
       </div>
 
-      {!["album","list","autolist","userprofile","artist","tag"].includes(page.name) && <BottomNav current={page.name} onNavigate={navigate}/>}
+      {!["album","list","autolist","artist","tag"].includes(page.name) && <BottomNav current={page.name} onNavigate={navigate}/>}
       {modal && <WriteModal onClose={()=>{ setModal(false); setPreselectedAlbum(null); }} onNavigate={navigate} onAdd={()=>{ setModal(false); setPreselectedAlbum(null); setFeedKey(k=>k+1); }} preselectedAlbum={preselectedAlbum}/>}
       {showOnboarding && <OnboardingModal onDone={finishOnboarding}/>}
     </>
