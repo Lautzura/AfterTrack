@@ -2728,6 +2728,7 @@ function MesDelAlbumBanner({ onNavigate, userId }) {
   const [userVote, setUserVote] = useState(null);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   const now = new Date();
   const monthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
@@ -2790,11 +2791,17 @@ function MesDelAlbumBanner({ onNavigate, userId }) {
 
   return (
     <div style={{ borderRadius:16, border:`1px solid ${T.border}`, marginBottom:16, overflow:"visible", background:T.surface, position:"relative", zIndex:10 }}>
-      {/* Header */}
-      <div style={{ padding:"10px 14px 8px", background:`linear-gradient(90deg,${T.accent}22,${T.accent2}11)`, borderBottom:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+      {/* Header — clickeable para colapsar */}
+      <div onClick={()=>setCollapsed(!collapsed)} style={{ padding:"10px 14px 8px", background:`linear-gradient(90deg,${T.accent}22,${T.accent2}11)`, borderBottom: collapsed?"none":`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center", cursor:"pointer", borderRadius: collapsed?"16px":"16px 16px 0 0" }}>
         <div style={{ fontSize:10, fontWeight:700, color:T.accent, letterSpacing:0.8 }}>🏆 ÁLBUM DEL MES · {monthName.toUpperCase()}</div>
-        <button onClick={()=>setExpanded(!expanded)} style={{ background:"none", border:"none", color:T.textMute, fontSize:11, cursor:"pointer" }}>{expanded?"Menos ▲":"Ver todo ▼"}</button>
+        <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+          {!collapsed && <button onClick={e=>{ e.stopPropagation(); setExpanded(!expanded); }} style={{ background:"none", border:"none", color:T.textMute, fontSize:11, cursor:"pointer" }}>{expanded?"Menos ▲":"Ver todo ▼"}</button>}
+          <span style={{ fontSize:12, color:T.textMute }}>{collapsed?"▼":"▲"}</span>
+        </div>
       </div>
+
+      {/* Contenido colapsable */}
+      {!collapsed && (<>
 
       {/* Top reseñado */}
       {topReseñado && (
@@ -2853,6 +2860,7 @@ function MesDelAlbumBanner({ onNavigate, userId }) {
         <div style={{ fontSize:10, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:8 }}>➕ NOMINÁ UN ÁLBUM</div>
         <NominationSearch onNominate={nominate}/>
       </div>
+      </>)}
     </div>
   );
 }
