@@ -967,7 +967,7 @@ function ShareModal({ review, onClose }) {
 }
 
 // ─── FAVORITE TRACK PLAYER ───────────────────────────────────────────────────
-function FavoriteTrackPlayer({ trackTitle, albumMbid, ac }) {
+function FavoriteTrackPlayer({ trackTitle, albumMbid, albumTitle, albumArtist, ac }) {
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState(null);
@@ -976,18 +976,29 @@ function FavoriteTrackPlayer({ trackTitle, albumMbid, ac }) {
   const intervalRef = useRef(null);
 
   const fetchPreview = async () => {
-    if (previewUrl) return previewUrl;
+    if (previewUrl !== null) return previewUrl;
     setLoading(true);
     try {
-      const data = await fetchSpotifyAlbum(albumMbid);
-      const track = (data.tracklist||[]).find(t =>
-        t.title?.toLowerCase() === trackTitle?.toLowerCase()
+      // Intentar con el mbid directo
+      let data = await fetchSpotifyAlbum(albumMbid);
+      let track = (data.tracklist||[]).find(t =>
+        t.title?.toLowerCase().trim() === trackTitle?.toLowerCase().trim()
       );
+      // Si no encontró, buscar el álbum en Spotify por nombre de canción
+      if (!track?.previewUrl && albumTitle && albumArtist) {
+        const results = await searchSpotify(`${albumTitle} ${albumArtist}`);
+        if (results.length > 0) {
+          data = await fetchSpotifyAlbum(results[0].mbid);
+          track = (data.tracklist||[]).find(t =>
+            t.title?.toLowerCase().trim() === trackTitle?.toLowerCase().trim()
+          );
+        }
+      }
       const url = track?.previewUrl || null;
       setPreviewUrl(url);
       setLoading(false);
       return url;
-    } catch { setLoading(false); return null; }
+    } catch { setLoading(false); setPreviewUrl(null); return null; }
   };
 
   const togglePlay = async (e) => {
@@ -1001,7 +1012,10 @@ function FavoriteTrackPlayer({ trackTitle, albumMbid, ac }) {
     }
     document.querySelectorAll("audio").forEach(a => a.pause());
     const url = await fetchPreview();
-    if (!url) return;
+    if (!url) {
+      alert("Preview no disponible para esta canción 😔");
+      return;
+    }
     if (!audioRef.current) audioRef.current = new Audio(url);
     else audioRef.current.src = url;
     audioRef.current.play();
@@ -1108,7 +1122,7 @@ function ReviewCard({ r, i, onNavigate }) {
             {(r.favorite_track || (trackReviews && trackReviews.length > 0)) && (
               <div style={{ borderTop:`1px solid ${ac}22`, paddingTop:8 }}>
                 {r.favorite_track && (
-                  <FavoriteTrackPlayer trackTitle={r.favorite_track} albumMbid={r.mbid} ac={T.accent}/>
+                  <FavoriteTrackPlayer trackTitle={r.favorite_track} albumMbid={r.mbid||r.album_id} albumTitle={r.album_title} albumArtist={r.artist} ac={T.accent}/>
                 )}
                 {trackReviews && trackReviews.length > 0 && (
                   <button onClick={e=>{ e.stopPropagation(); setShowDetail(true); }}
