@@ -2628,7 +2628,7 @@ function MesDelAlbumBanner({ onNavigate, userId }) {
   if (loading) return null;
 
   return (
-    <div style={{ borderRadius:16, border:`1px solid ${T.border}`, marginBottom:16, overflow:"hidden", background:T.surface }}>
+    <div style={{ borderRadius:16, border:`1px solid ${T.border}`, marginBottom:16, overflow:"visible", background:T.surface, position:"relative", zIndex:10 }}>
       {/* Header */}
       <div style={{ padding:"10px 14px 8px", background:`linear-gradient(90deg,${T.accent}22,${T.accent2}11)`, borderBottom:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
         <div style={{ fontSize:10, fontWeight:700, color:T.accent, letterSpacing:0.8 }}>🏆 ÁLBUM DEL MES · {monthName.toUpperCase()}</div>
@@ -2688,7 +2688,7 @@ function MesDelAlbumBanner({ onNavigate, userId }) {
       </div>
 
       {/* Nominar */}
-      <div style={{ padding:"12px 14px" }}>
+      <div style={{ padding:"12px 14px", overflow:"visible", position:"relative", zIndex:50 }}>
         <div style={{ fontSize:10, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:8 }}>➕ NOMINÁ UN ÁLBUM</div>
         <NominationSearch onNominate={nominate}/>
       </div>
@@ -2734,7 +2734,7 @@ function NominationSearch({ onNominate }) {
         onBlur={e=>{ setTimeout(()=>setResults([]),200); e.target.style.borderColor=T.border; }}/>
       {searching && <div style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", fontSize:11, color:T.textMute }}>...</div>}
       {results.length > 0 && (
-        <div style={{ position:"absolute", top:"100%", left:0, right:0, background:T.surface, border:`1px solid ${T.border}`, borderRadius:12, marginTop:4, zIndex:100, overflow:"hidden", boxShadow:"0 8px 24px rgba(0,0,0,0.4)" }}>
+        <div style={{ position:"absolute", top:"100%", left:0, right:0, background:T.surface, border:`1px solid ${T.border}`, borderRadius:12, marginTop:4, zIndex:9999, overflow:"hidden", boxShadow:"0 8px 24px rgba(0,0,0,0.4)" }}>
           {results.map(a => (
             <div key={a.spotifyId} onClick={()=>{ setNominated(a); setQ(""); setResults([]); onNominate(a); }}
               style={{ display:"flex", gap:10, alignItems:"center", padding:"10px 12px", cursor:"pointer", borderBottom:`1px solid ${T.border}` }}
