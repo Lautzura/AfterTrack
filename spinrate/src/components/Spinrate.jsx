@@ -979,22 +979,11 @@ function FavoriteTrackPlayer({ trackTitle, albumMbid, albumTitle, albumArtist, a
     if (previewUrl !== null) return previewUrl;
     setLoading(true);
     try {
-      // Intentar con el mbid directo
-      let data = await fetchSpotifyAlbum(albumMbid);
-      let track = (data.tracklist||[]).find(t =>
-        t.title?.toLowerCase().trim() === trackTitle?.toLowerCase().trim()
-      );
-      // Si no encontró, buscar el álbum en Spotify por nombre de canción
-      if (!track?.previewUrl && albumTitle && albumArtist) {
-        const results = await searchSpotify(`${albumTitle} ${albumArtist}`);
-        if (results.length > 0) {
-          data = await fetchSpotifyAlbum(results[0].mbid);
-          track = (data.tracklist||[]).find(t =>
-            t.title?.toLowerCase().trim() === trackTitle?.toLowerCase().trim()
-          );
-        }
-      }
-      const url = track?.previewUrl || null;
+      const params = new URLSearchParams({ track: trackTitle });
+      if (albumArtist) params.set("artist", albumArtist);
+      const res = await fetch(`/api/deezer?${params}`);
+      const data = await res.json();
+      const url = data.previewUrl || null;
       setPreviewUrl(url);
       setLoading(false);
       return url;
