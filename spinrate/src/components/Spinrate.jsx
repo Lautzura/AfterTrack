@@ -1012,10 +1012,7 @@ function FavoriteTrackPlayer({ trackTitle, albumMbid, albumTitle, albumArtist, a
     }
     document.querySelectorAll("audio").forEach(a => a.pause());
     const url = await fetchPreview();
-    if (!url) {
-      alert("Preview no disponible para esta canción 😔");
-      return;
-    }
+    if (!url) return; // silently do nothing
     if (!audioRef.current) audioRef.current = new Audio(url);
     else audioRef.current.src = url;
     audioRef.current.play();
@@ -1035,10 +1032,19 @@ function FavoriteTrackPlayer({ trackTitle, albumMbid, albumTitle, albumArtist, a
     <div onClick={e=>e.stopPropagation()} style={{ display:"flex", alignItems:"center", gap:6, padding:"5px 8px", background:`${ac}18`, borderRadius:8, position:"relative", overflow:"hidden" }}>
       <span style={{ fontSize:11 }}>⭐</span>
       <span style={{ fontSize:11, color:ac, fontWeight:700, flex:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{trackTitle}</span>
-      <button onClick={togglePlay}
-        style={{ flexShrink:0, width:24, height:24, borderRadius:"50%", background:playing?ac:`${ac}33`, border:`1.5px solid ${ac}`, display:"flex", alignItems:"center", justifyContent:"center", cursor:loading?"wait":"pointer", fontSize:10, color:playing?"#fff":ac, transition:"all 0.15s" }}>
-        {loading ? "…" : playing ? "⏸" : "▶"}
-      </button>
+      {previewUrl !== null && previewUrl !== undefined ? (
+        previewUrl ? (
+          <button onClick={togglePlay}
+            style={{ flexShrink:0, width:24, height:24, borderRadius:"50%", background:playing?ac:`${ac}33`, border:`1.5px solid ${ac}`, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", fontSize:10, color:playing?"#fff":ac, transition:"all 0.15s" }}>
+            {playing ? "⏸" : "▶"}
+          </button>
+        ) : null
+      ) : (
+        <button onClick={togglePlay}
+          style={{ flexShrink:0, width:24, height:24, borderRadius:"50%", background:`${ac}33`, border:`1.5px solid ${ac}44`, display:"flex", alignItems:"center", justifyContent:"center", cursor:loading?"wait":"pointer", fontSize:10, color:`${ac}88` }}>
+          {loading ? "…" : "▶"}
+        </button>
+      )}
       {playing && (
         <div style={{ position:"absolute", bottom:0, left:0, right:0, height:2, background:`${ac}22` }}>
           <div style={{ height:"100%", width:`${progress}%`, background:ac, transition:"width 0.2s" }}/>
