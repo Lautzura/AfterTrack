@@ -1215,7 +1215,7 @@ function FeedPage({ onNavigate, onWrite, refreshKey, userId }) {
             {refreshing ? "Actualizando..." : pullY > 50 ? "↑ Soltá para actualizar" : "↓ Tirá para actualizar"}
           </div>
         )}
-        <MesDelAlbumBanner onNavigate={onNavigate}/>
+        <MesDelAlbumBanner onNavigate={onNavigate} userId={userId}/>
         <RecomendacionesBanner userId={userId} onNavigate={onNavigate}/>
         <FeedFilters filters={filters} onChange={setFilters}/>
         {loading ? <FeedSkeleton/> : filtered.length===0 ? (
@@ -2303,6 +2303,7 @@ function ListDetailPage({ listId, onNavigate }) {
 function ListsPage({ userId, onNavigate }) {
   const [myLists, setMyLists] = useState([]);
   const [autoLists, setAutoLists] = useState([]);
+  const [winners, setWinners] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
 
@@ -2373,6 +2374,11 @@ function ListsPage({ userId, onNavigate }) {
 
     setAutoLists(auto);
     setMyLists(userLists||[]);
+
+    // Ganadores anteriores
+    const { data:w } = await supabase.from("monthly_winners").select("*").order("month", {ascending:false}).limit(12);
+    setWinners(w||[]);
+
     setLoading(false);
   };
 
@@ -2447,6 +2453,29 @@ function ListsPage({ userId, onNavigate }) {
       <div style={{ maxWidth:560, margin:"0 auto", padding:"20px 20px 0" }}>
         {loading ? <Spinner/> : (
           <>
+            {/* Ganadores del mes */}
+            {winners.length > 0 && (
+              <div style={{ marginBottom:28 }}>
+                <div style={{ fontSize:11, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:14 }}>🏆 GANADORES DEL MES</div>
+                <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                  {winners.map((w,i) => {
+                    const ac = accentFor(w.album_id);
+                    const monthLabel = new Date(w.month+"-01").toLocaleDateString("es-AR",{month:"long", year:"numeric"});
+                    return (
+                      <div key={w.month} style={{ display:"flex", gap:12, alignItems:"center", background:T.surface, borderRadius:14, padding:"12px 14px", border:`1px solid ${i===0?T.accent+"44":T.border}` }}>
+                        <div style={{ fontSize:18, width:28, textAlign:"center", flexShrink:0 }}>{i===0?"🥇":i===1?"🥈":i===2?"🥉":"🏅"}</div>
+                        <AlbumCover src={w.cover_url} ac={ac} size={44}/>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:13, fontWeight:700, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{w.album_title}</div>
+                          <div style={{ fontSize:11, color:T.textSub }}>{w.artist}</div>
+                          <div style={{ fontSize:10, color:T.textMute, marginTop:2 }}>{monthLabel} · {w.votes} voto{w.votes!==1?"s":""}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {/* Auto lists — grid de 2 columnas */}
             {autoLists.length > 0 && (
               <div style={{ marginBottom:28 }}>
@@ -2532,83 +2561,198 @@ function AutoListPage({ list, onNavigate }) {
 
 
 // ─── MES DEL ALBUM ────────────────────────────────────────────────────────────
-function MesDelAlbumBanner({ onNavigate }) {
-  const [album, setAlbum] = useState(null);
-  const [votes, setVotes] = useState(0);
-  const [voted, setVoted] = useState(false);
+function MesDelAlbumBanner({ onNavigate, userId }) {
+  const [topReseñado, setTopReseñado] = useState(null);
+  const [nominations, setNominations] = useState([]);
+  const [userVote, setUserVote] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   const now = new Date();
   const monthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
   const monthName = now.toLocaleDateString("es-AR",{month:"long", year:"numeric"});
 
-  useEffect(() => {
-    supabase.from("feed_reviews").select("album_id,album_title,artist,cover_url,year,rating")
-      .gte("created_at", new Date(now.getFullYear(), now.getMonth(), 1).toISOString())
-      .limit(200)
-      .then(({data}) => {
-        if (!data || data.length===0) { setLoading(false); return; }
-        const counts = {}; const meta = {};
-        data.forEach(r => { counts[r.album_id]=(counts[r.album_id]||0)+1; meta[r.album_id]=r; });
-        const sorted = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
-        if (sorted[0]) { setAlbum(meta[sorted[0][0]]); setVotes(sorted[0][1]); }
-        setLoading(false);
-      });
-    try { setVoted(!!localStorage.getItem(`voted_${monthKey}`)); } catch {}
-  }, []);
+  const load = async () => {
+    const [{ data:reviews }, { data:noms }, { data:myVote }] = await Promise.all([
+      supabase.from("feed_reviews").select("album_id,album_title,artist,cover_url,year")
+        .gte("created_at", new Date(now.getFullYear(), now.getMonth(), 1).toISOString())
+        .limit(200),
+      supabase.from("nominations").select("*, nomination_votes(count)").eq("month", monthKey).order("created_at", {ascending:true}),
+      userId ? supabase.from("nomination_votes").select("nomination_id").eq("user_id", userId).eq("month", monthKey).maybeSingle() : { data: null },
+    ]);
 
-  const vote = () => {
-    if (voted || !album) return;
-    setVoted(true); setVotes(v=>v+1);
-    try { localStorage.setItem(`voted_${monthKey}`, "1"); } catch {}
+    // Top reseñado del mes
+    if (reviews && reviews.length > 0) {
+      const counts = {}; const meta = {};
+      reviews.forEach(r => { counts[r.album_id]=(counts[r.album_id]||0)+1; meta[r.album_id]=r; });
+      const top = Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
+      if (top) setTopReseñado({ ...meta[top[0]], reviewCount: top[1] });
+    }
+
+    setNominations((noms||[]).map(n => ({ ...n, voteCount: n.nomination_votes?.[0]?.count || 0 })).sort((a,b)=>b.voteCount-a.voteCount));
+    setUserVote(myVote?.nomination_id || null);
+    setLoading(false);
   };
 
-  if (loading || !album) return null;
-  const ac = accentFor(album.album_id);
+  useEffect(() => { load(); }, [userId]);
+
+  const vote = async (nominationId) => {
+    if (!userId) return;
+    if (userVote === nominationId) return;
+    if (userVote) {
+      await supabase.from("nomination_votes").delete().eq("user_id", userId).eq("month", monthKey);
+    }
+    await supabase.from("nomination_votes").insert({ nomination_id: nominationId, user_id: userId, month: monthKey });
+    setUserVote(nominationId);
+    setNominations(prev => prev.map(n => ({
+      ...n,
+      voteCount: n.id === nominationId ? n.voteCount+1 : (n.id === userVote ? n.voteCount-1 : n.voteCount)
+    })).sort((a,b)=>b.voteCount-a.voteCount));
+  };
+
+  const nominate = async (album) => {
+    if (!userId) return;
+    const exists = nominations.find(n => n.album_id === album.spotifyId);
+    if (exists) { vote(exists.id); return; }
+    const { data } = await supabase.from("nominations").insert({
+      month: monthKey, album_id: album.spotifyId, album_title: album.title,
+      artist: album.artist, cover_url: album.cover, year: album.year, nominated_by: userId
+    }).select().single();
+    if (data) {
+      const newNom = { ...data, voteCount: 0 };
+      setNominations(prev => [...prev, newNom]);
+      vote(data.id);
+    }
+  };
+
+  if (loading) return null;
 
   return (
     <div style={{ borderRadius:16, border:`1px solid ${T.border}`, marginBottom:16, overflow:"hidden", background:T.surface }}>
       {/* Header */}
-      <div style={{ padding:"10px 14px 8px", background:`linear-gradient(90deg,${ac}22,${T.accent}11)`, borderBottom:`1px solid ${T.border}` }}>
-        <div style={{ fontSize:10, fontWeight:700, color:ac, letterSpacing:0.8 }}>🏆 ÁLBUM DEL MES · {monthName.toUpperCase()}</div>
+      <div style={{ padding:"10px 14px 8px", background:`linear-gradient(90deg,${T.accent}22,${T.accent2}11)`, borderBottom:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <div style={{ fontSize:10, fontWeight:700, color:T.accent, letterSpacing:0.8 }}>🏆 ÁLBUM DEL MES · {monthName.toUpperCase()}</div>
+        <button onClick={()=>setExpanded(!expanded)} style={{ background:"none", border:"none", color:T.textMute, fontSize:11, cursor:"pointer" }}>{expanded?"Menos ▲":"Ver todo ▼"}</button>
       </div>
-      {/* Auto candidate */}
+
+      {/* Top reseñado */}
+      {topReseñado && (
+        <div style={{ padding:"12px 14px", borderBottom:`1px solid ${T.border}` }}>
+          <div style={{ fontSize:10, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:8 }}>📈 MÁS RESEÑADO</div>
+          <div style={{ display:"flex", gap:12, alignItems:"center" }}>
+            <div onClick={()=>onNavigate("album", topReseñado.album_id)} style={{ cursor:"pointer", flexShrink:0 }}>
+              <AlbumCover src={topReseñado.cover_url} ac={accentFor(topReseñado.album_id)} size={48}/>
+            </div>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:13, fontWeight:700, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{topReseñado.album_title}</div>
+              <div style={{ fontSize:11, color:T.textSub }}>{topReseñado.artist} · {topReseñado.reviewCount} reseña{topReseñado.reviewCount!==1?"s":""}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Nominaciones con votos */}
       <div style={{ padding:"12px 14px", borderBottom:`1px solid ${T.border}` }}>
-        <div style={{ fontSize:10, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:8 }}>📈 MÁS RESEÑADO</div>
-        <div style={{ display:"flex", gap:12, alignItems:"center" }}>
-          <div onClick={()=>onNavigate("album",album.album_id)} style={{ cursor:"pointer", flexShrink:0 }}>
-            <AlbumCover src={album.cover_url} ac={ac} size={52}/>
-          </div>
-          <div style={{ flex:1, minWidth:0 }}>
-            <div onClick={()=>onNavigate("album",album.album_id)} style={{ fontSize:14, fontWeight:700, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", cursor:"pointer" }}>{album.album_title}</div>
-            <div style={{ fontSize:12, color:T.textSub }}>{album.artist} · {votes} reseña{votes!==1?"s":""}</div>
-          </div>
-          <button onClick={vote} disabled={voted}
-            style={{ flexShrink:0, padding:"7px 14px", background:voted?`${ac}22`:`linear-gradient(135deg,${ac},${T.accent})`, border:`1px solid ${voted?ac+"44":ac}`, borderRadius:20, color:voted?"#fff":"#fff", fontSize:12, fontWeight:700, cursor:voted?"default":"pointer", opacity:voted?0.7:1 }}>
-            {voted?"✓ Votado":"Votar"}
+        <div style={{ fontSize:10, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:10 }}>🗳️ CANDIDATOS ({nominations.length})</div>
+        {nominations.length === 0
+          ? <div style={{ fontSize:12, color:T.textMute, textAlign:"center", padding:"8px 0" }}>Todavía no hay nominados — ¡sé el primero!</div>
+          : (expanded ? nominations : nominations.slice(0,3)).map((n, i) => {
+            const isVoted = userVote === n.id;
+            const ac = accentFor(n.album_id);
+            const maxVotes = nominations[0]?.voteCount || 1;
+            return (
+              <div key={n.id} style={{ display:"flex", gap:10, alignItems:"center", marginBottom:8, padding:"8px 10px", background:isVoted?`${T.accent}11`:T.surface2, borderRadius:10, border:`1px solid ${isVoted?T.accent+"44":T.border}` }}>
+                <div style={{ fontSize:13, fontWeight:800, color:i<3?T.accent:T.textMute, width:18, flexShrink:0, textAlign:"center" }}>{i+1}</div>
+                <AlbumCover src={n.cover_url} ac={ac} size={36}/>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:12, fontWeight:700, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{n.album_title}</div>
+                  <div style={{ fontSize:11, color:T.textSub }}>{n.artist}</div>
+                  {/* Barra de progreso */}
+                  <div style={{ marginTop:4, height:3, background:T.border, borderRadius:2, overflow:"hidden" }}>
+                    <div style={{ height:"100%", width:`${Math.round((n.voteCount/maxVotes)*100)}%`, background:`linear-gradient(90deg,${T.accent},${T.accent2})`, borderRadius:2, transition:"width 0.4s" }}/>
+                  </div>
+                </div>
+                <button onClick={()=>vote(n.id)}
+                  style={{ flexShrink:0, padding:"5px 12px", background:isVoted?`linear-gradient(135deg,${T.accent},${T.accent2})`:"none", border:`1.5px solid ${isVoted?T.accent:T.border}`, borderRadius:16, color:isVoted?"#fff":T.textSub, fontSize:11, fontWeight:700, cursor:"pointer" }}>
+                  {isVoted?"✓":n.voteCount} {!isVoted&&"voto"}{!isVoted&&n.voteCount!==1?"s":""}
+                </button>
+              </div>
+            );
+          })
+        }
+        {nominations.length > 3 && (
+          <button onClick={()=>setExpanded(!expanded)} style={{ width:"100%", background:"none", border:`1px solid ${T.border}`, borderRadius:8, padding:"6px 0", fontSize:11, color:T.textMute, cursor:"pointer", marginTop:4 }}>
+            {expanded ? "Mostrar menos ▲" : `Ver ${nominations.length-3} más ▼`}
           </button>
-        </div>
+        )}
       </div>
-      {/* Community nomination */}
+
+      {/* Nominar */}
       <div style={{ padding:"12px 14px" }}>
-        <div style={{ fontSize:10, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:8 }}>🗳️ NOMINÁ UN ÁLBUM</div>
-        <div style={{ display:"flex", gap:8 }}>
-          <input
-            placeholder="Buscá un álbum para nominar..."
-            style={{ flex:1, background:T.surface2, border:`1px solid ${T.border}`, borderRadius:10, padding:"8px 12px", fontSize:12, color:T.text, outline:"none" }}
-            onFocus={e=>e.target.style.borderColor=T.accent}
-            onBlur={e=>e.target.style.borderColor=T.border}
-            onKeyDown={e=>{ if(e.key==="Enter" && e.target.value.trim()) { alert(`"${e.target.value}" nominado! 🎵`); e.target.value=""; }}}
-          />
-          <button style={{ background:`linear-gradient(135deg,${T.accent},${T.accent2})`, border:"none", borderRadius:10, padding:"8px 14px", color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer" }}>+</button>
-        </div>
-        <div style={{ fontSize:11, color:T.textMute, marginTop:6 }}>Presioná Enter o + para nominar</div>
+        <div style={{ fontSize:10, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:8 }}>➕ NOMINÁ UN ÁLBUM</div>
+        <NominationSearch onNominate={nominate}/>
       </div>
     </div>
   );
 }
 
-// ─── RECOMENDACIONES ──────────────────────────────────────────────────────────
+function NominationSearch({ onNominate }) {
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [nominated, setNominated] = useState(null);
+  const debounce = useRef(null);
+
+  useEffect(() => {
+    if (q.trim().length < 2) { setResults([]); return; }
+    clearTimeout(debounce.current);
+    debounce.current = setTimeout(async () => {
+      setSearching(true);
+      const res = await searchSpotify(q);
+      setResults(res.slice(0, 5));
+      setSearching(false);
+    }, 400);
+  }, [q]);
+
+  if (nominated) return (
+    <div style={{ display:"flex", gap:10, alignItems:"center", padding:"8px 10px", background:`${T.accent}15`, borderRadius:10, border:`1px solid ${T.accent}33` }}>
+      <AlbumCover src={nominated.cover} ac={T.accent} size={36}/>
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ fontSize:12, fontWeight:700, color:T.accent, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>✅ {nominated.title}</div>
+        <div style={{ fontSize:11, color:T.textSub }}>{nominated.artist}</div>
+      </div>
+      <button onClick={()=>setNominated(null)} style={{ background:"none", border:`1px solid ${T.border}`, borderRadius:8, padding:"4px 8px", fontSize:11, color:T.textMute, cursor:"pointer" }}>Cambiar</button>
+    </div>
+  );
+
+  return (
+    <div style={{ position:"relative" }}>
+      <input value={q} onChange={e=>setQ(e.target.value)}
+        placeholder="Buscá un álbum para nominar..."
+        style={{ width:"100%", background:T.surface2, border:`1px solid ${T.border}`, borderRadius:10, padding:"8px 12px", fontSize:12, color:T.text, outline:"none", boxSizing:"border-box" }}
+        onFocus={e=>e.target.style.borderColor=T.accent}
+        onBlur={e=>{ setTimeout(()=>setResults([]),200); e.target.style.borderColor=T.border; }}/>
+      {searching && <div style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", fontSize:11, color:T.textMute }}>...</div>}
+      {results.length > 0 && (
+        <div style={{ position:"absolute", top:"100%", left:0, right:0, background:T.surface, border:`1px solid ${T.border}`, borderRadius:12, marginTop:4, zIndex:100, overflow:"hidden", boxShadow:"0 8px 24px rgba(0,0,0,0.4)" }}>
+          {results.map(a => (
+            <div key={a.spotifyId} onClick={()=>{ setNominated(a); setQ(""); setResults([]); onNominate(a); }}
+              style={{ display:"flex", gap:10, alignItems:"center", padding:"10px 12px", cursor:"pointer", borderBottom:`1px solid ${T.border}` }}
+              onMouseEnter={e=>e.currentTarget.style.background=T.surface2}
+              onMouseLeave={e=>e.currentTarget.style.background="none"}>
+              <AlbumCover src={a.cover} ac={T.accent} size={36}/>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:13, fontWeight:600, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{a.title}</div>
+                <div style={{ fontSize:11, color:T.textSub }}>{a.artist} · {a.year}</div>
+              </div>
+              <span style={{ fontSize:11, color:T.accent, fontWeight:600, flexShrink:0 }}>Nominar</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 function RecomendacionesBanner({ userId, onNavigate }) {
   const [albums, setAlbums] = useState([]);
   const [loading, setLoading] = useState(true);
