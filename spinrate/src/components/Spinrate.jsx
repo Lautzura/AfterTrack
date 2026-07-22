@@ -699,7 +699,7 @@ function WriteModal({ onClose, onAdd, onNavigate, preselectedAlbum=null }) {
 }
 
 // ─── TRACK REVIEW MODAL ───────────────────────────────────────────────────────
-function TrackReviewModal({ track, albumId, existing, onClose, onSave }) {
+function TrackReviewModal({ track, albumId, existing, onClose, onSave, artist="" }) {
   const [rating, setRating] = useState(existing?.rating || 0);
   const [text, setText] = useState(existing?.text || "");
   const [saving, setSaving] = useState(false);
@@ -721,34 +721,60 @@ function TrackReviewModal({ track, albumId, existing, onClose, onSave }) {
     setSaving(false);
   };
 
-  return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:300, backdropFilter:"blur(8px)", padding:20 }}
+  const handleDelete = async () => {
+    if (!existing) return;
+    if (!confirm("¿Borrar esta reseña?")) return;
+    await supabase.from("track_reviews").delete().eq("id", existing.id);
+    onSave();
+    onClose();
+  };
+
+  return createPortal(
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:500, backdropFilter:"blur(8px)" }}
       onClick={e=>{ if(e.target===e.currentTarget) onClose(); }}>
-      <div style={{ background:T.surface, borderRadius:20, width:"100%", maxWidth:420, border:`1px solid ${T.border}`, padding:"24px" }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
-          <div>
-            <div style={{ fontSize:13, color:T.textMute, marginBottom:2 }}>Reseña de canción</div>
-            <div style={{ fontSize:17, fontWeight:700, color:T.text }}>{track.number}. {track.title}</div>
+      <div style={{ background:T.surface, borderRadius:"20px 20px 0 0", width:"100%", maxWidth:560, border:`1px solid ${T.border}`, borderBottom:"none", padding:"20px 20px 32px" }}>
+        {/* Handle */}
+        <div style={{ display:"flex", justifyContent:"center", marginBottom:16 }}>
+          <div style={{ width:36, height:4, borderRadius:2, background:T.border }}/>
+        </div>
+        {/* Header */}
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16 }}>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:11, color:T.textMute, marginBottom:2, fontWeight:600, letterSpacing:0.5 }}>RESEÑA DE CANCIÓN</div>
+            <div style={{ fontSize:16, fontWeight:700, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{track.number}. {track.title}</div>
             {track.length && <div style={{ fontSize:12, color:T.textMute, marginTop:1 }}>{msToMin(track.length)}</div>}
           </div>
-          <button onClick={onClose} style={{ background:T.surface2, border:`1px solid ${T.border}`, borderRadius:"50%", width:28, height:28, cursor:"pointer", fontSize:15, color:T.textSub, display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
+          <div style={{ display:"flex", gap:8, alignItems:"center", flexShrink:0, marginLeft:10 }}>
+            <DeezerPlayButton trackTitle={track.title} artist={artist} size={32}/>
+            <button onClick={onClose} style={{ background:T.surface2, border:`1px solid ${T.border}`, borderRadius:"50%", width:28, height:28, cursor:"pointer", fontSize:15, color:T.textSub, display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
+          </div>
         </div>
+        {/* Rating */}
         <div style={{ marginBottom:16 }}>
           <div style={{ fontSize:11, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:10 }}>PUNTUACIÓN</div>
-          <Stars n={rating} onChange={setRating} size={28}/>
-          {rating > 0 && <div style={{ fontSize:12, color:T.textSub, marginTop:6 }}>{rating} estrellas</div>}
+          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+            <Stars n={rating} onChange={setRating} size={30}/>
+            {rating > 0 && <span style={{ fontSize:13, color:T.textSub }}>{rating} estrellas</span>}
+          </div>
         </div>
-        <textarea placeholder="Opcional: ¿qué te pareció esta canción?" value={text} onChange={e=>setText(e.target.value)} rows={3}
-          style={{ width:"100%", padding:"12px 14px", background:T.surface2, border:`1.5px solid ${T.border}`, borderRadius:12, fontSize:14, color:T.text, outline:"none", fontFamily:"Georgia,serif", resize:"none", lineHeight:1.6, marginBottom:16 }}
+        {/* Text */}
+        <textarea placeholder="¿Qué te pareció esta canción? (opcional)" value={text} onChange={e=>setText(e.target.value)} rows={3}
+          style={{ width:"100%", padding:"12px 14px", background:T.surface2, border:`1.5px solid ${T.border}`, borderRadius:12, fontSize:14, color:T.text, outline:"none", fontFamily:"inherit", resize:"none", lineHeight:1.6, marginBottom:16, boxSizing:"border-box" }}
           onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.border}/>
-        <div style={{ display:"flex", gap:10 }}>
+        {/* Buttons */}
+        <div style={{ display:"flex", gap:8 }}>
+          {existing && (
+            <button onClick={handleDelete} style={{ padding:"11px 14px", background:`${T.like}18`, border:`1px solid ${T.like}44`, borderRadius:12, color:T.like, fontSize:13, cursor:"pointer" }}>Borrar</button>
+          )}
           <button onClick={onClose} style={{ flex:1, padding:"11px", background:"none", border:`1px solid ${T.border}`, borderRadius:12, color:T.textSub, fontSize:14, cursor:"pointer" }}>Cancelar</button>
-          <button onClick={handleSave} disabled={!rating||saving} style={{ flex:2, padding:"11px", background:rating?`linear-gradient(135deg,${T.accent},${T.accent2})`:"#2a2f45", border:"none", borderRadius:12, color:rating?"#fff":T.textMute, fontSize:14, fontWeight:600, cursor:rating?"pointer":"default" }}>
-            {saving?"Guardando...":(existing?"Actualizar":"Guardar")}
+          <button onClick={handleSave} disabled={!rating||saving}
+            style={{ flex:2, padding:"11px", background:rating?`linear-gradient(135deg,${T.accent},${T.accent2})`:`${T.surface2}`, border:"none", borderRadius:12, color:rating?"#fff":T.textMute, fontSize:14, fontWeight:600, cursor:rating?"pointer":"default" }}>
+            {saving?"Guardando...":(existing?"Actualizar":"Guardar reseña")}
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -880,7 +906,7 @@ function Tracklist({ albumId, mbid, userId, artist="" }) {
             <div style={{ flex:1, minWidth:0 }}>
               <div style={{ fontSize:14, fontWeight:review?600:400, color:review?T.text:T.textSub, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{track.title}</div>
               {review && <div style={{ marginTop:3 }}><Stars n={review.rating} size={11}/></div>}
-              {review?.text && <div style={{ fontSize:12, color:T.textMute, marginTop:2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>"{review.text}"</div>}
+              {review?.text && <div style={{ fontSize:12, color:T.textMute, marginTop:4, fontStyle:"italic", lineHeight:1.5 }}>"{review.text}"</div>}
             </div>
             {track.length && <div style={{ fontSize:12, color:T.textMute, flexShrink:0 }}>{msToMin(track.length)}</div>}
             <button onClick={()=>setEditTrack(track)}
@@ -891,7 +917,7 @@ function Tracklist({ albumId, mbid, userId, artist="" }) {
         );
       })}
       {editTrack && (
-        <TrackReviewModal track={editTrack} albumId={albumId} existing={myReviews[editTrack.number]} onClose={()=>setEditTrack(null)} onSave={onSave}/>
+        <TrackReviewModal track={editTrack} albumId={albumId} existing={myReviews[editTrack.number]} onClose={()=>setEditTrack(null)} onSave={onSave} artist={artist}/>
       )}
     </div>
   );
@@ -1249,13 +1275,16 @@ function ReviewCard({ r, i, onNavigate }) {
                 {(trackReviews||[]).length === 0
                   ? <div style={{ textAlign:"center", padding:"32px 0", color:T.textMute, fontSize:13 }}>No hay canciones puntuadas</div>
                   : (trackReviews||[]).map(tr => (
-                    <div key={tr.track_number} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 0", borderBottom:`1px solid ${T.border}` }}>
-                      <span style={{ fontSize:12, color:T.textMute, width:20, flexShrink:0, textAlign:"right" }}>{tr.track_number}.</span>
-                      <span style={{ fontSize:14, color:r.favorite_track===tr.track_title?T.accent:T.text, flex:1, fontWeight:r.favorite_track===tr.track_title?700:400 }}>
-                        {r.favorite_track===tr.track_title?"⭐ ":""}{tr.track_title}
-                      </span>
-                      <Stars n={tr.rating} size={14}/>
-                      <span style={{ fontSize:12, color:T.textSub, minWidth:24, textAlign:"right" }}>{tr.rating}</span>
+                    <div key={tr.track_number} style={{ padding:"12px 0", borderBottom:`1px solid ${T.border}` }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom: tr.text?6:0 }}>
+                        <span style={{ fontSize:12, color:T.textMute, width:20, flexShrink:0, textAlign:"right" }}>{tr.track_number}.</span>
+                        <span style={{ fontSize:14, color:r.favorite_track===tr.track_title?T.accent:T.text, flex:1, fontWeight:r.favorite_track===tr.track_title?700:400 }}>
+                          {r.favorite_track===tr.track_title?"⭐ ":""}{tr.track_title}
+                        </span>
+                        <Stars n={tr.rating} size={14}/>
+                        <span style={{ fontSize:12, color:T.textSub, minWidth:24, textAlign:"right" }}>{tr.rating}</span>
+                      </div>
+                      {tr.text && <div style={{ fontSize:13, color:T.textMute, fontStyle:"italic", paddingLeft:30, lineHeight:1.6 }}>"{tr.text}"</div>}
                     </div>
                   ))
                 }
