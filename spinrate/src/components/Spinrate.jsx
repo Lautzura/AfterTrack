@@ -496,7 +496,9 @@ function WriteModal({ onClose, onAdd, onNavigate, preselectedAlbum=null }) {
   const [submitting, setSubmitting] = useState(false);
   const [tracklist, setTracklist] = useState([]);
   const [trackRatings, setTrackRatings] = useState({});
+  const [trackTexts, setTrackTexts] = useState({});
   const [favoriteTrack, setFavoriteTrack] = useState(null);
+  const [editTrackInModal, setEditTrackInModal] = useState(null);
   const SUGGESTED_TAGS = ["rock","pop","jazz","hip-hop","electronica","indie","metal","clasica","reggae","folk","soul","punk","alternativo","ambient"];
   const addTag = (tag) => { const t=tag.toLowerCase().trim(); if(t&&!tags.includes(t)&&tags.length<5) setTags(p=>[...p,t]); setTagInput(""); };
   const removeTag = (tag) => setTags(p=>p.filter(t=>t!==tag));
@@ -554,7 +556,7 @@ function WriteModal({ onClose, onAdd, onNavigate, preselectedAlbum=null }) {
       if (trackEntries.length > 0) {
         const trackInserts = trackEntries.map(([num, r]) => {
           const track = tracklist.find(t=>String(t.number)===String(num));
-          return { album_id: albumId, track_number: Number(num), track_title: track?.title||"", rating: r };
+          return { album_id: albumId, track_number: Number(num), track_title: track?.title||"", rating: r, text: trackTexts[num]||"" };
         });
         await supabase.from("track_reviews").upsert(trackInserts, { onConflict:"album_id,track_number,user_id" });
       }
@@ -674,18 +676,34 @@ function WriteModal({ onClose, onAdd, onNavigate, preselectedAlbum=null }) {
                 <div style={{ fontSize:11, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:8 }}>PUNTUÁ LAS CANCIONES (OPCIONAL)</div>
                 <div style={{ display:"flex", flexDirection:"column", gap:6, maxHeight:200, overflowY:"auto", paddingRight:4 }}>
                   {tracklist.map(track => (
-                    <div key={track.number} style={{ display:"flex", alignItems:"center", gap:10, padding:"7px 10px", background:T.surface2, borderRadius:10, border:`1px solid ${trackRatings[track.number]>0?T.accent+"44":T.border}` }}>
+                    <div key={track.number} style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 10px", background:T.surface2, borderRadius:10, border:`1px solid ${trackRatings[track.number]>0?T.accent+"44":T.border}` }}>
                       <DeezerPlayButton trackTitle={track.title} artist={selected?.artist} size={22}/>
-                      <span style={{ fontSize:13, color:favoriteTrack===track.title?T.accent:T.text, flex:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", fontWeight:favoriteTrack===track.title?700:400 }}>
+                      <span onClick={()=>setEditTrackInModal(track)} style={{ fontSize:13, color:favoriteTrack===track.title?T.accent:T.text, flex:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", fontWeight:favoriteTrack===track.title?700:400, cursor:"pointer" }}>
                         {favoriteTrack===track.title?"⭐ ":""}{track.title}
                       </span>
+                      {trackTexts[track.number] && <span style={{ fontSize:10, color:T.accent, flexShrink:0 }}>✍️</span>}
                       <Stars n={trackRatings[track.number]||0} onChange={v=>setTrackRatings(p=>({...p,[track.number]:v}))} size={14}/>
                       {trackRatings[track.number]>0 && (
-                        <span onClick={()=>setTrackRatings(p=>{ const n={...p}; delete n[track.number]; return n; })} style={{ fontSize:11, color:T.textMute, cursor:"pointer", flexShrink:0 }}>×</span>
+                        <span onClick={()=>{ setEditTrackInModal(track); }} style={{ fontSize:11, color:T.accent, cursor:"pointer", flexShrink:0, background:`${T.accent}18`, borderRadius:6, padding:"2px 6px" }}>+ reseña</span>
                       )}
                     </div>
                   ))}
                 </div>
+                {editTrackInModal && (
+                  <TrackReviewModal
+                    track={editTrackInModal}
+                    albumId={null}
+                    artist={selected?.artist||""}
+                    existing={trackRatings[editTrackInModal.number] ? { rating: trackRatings[editTrackInModal.number], text: trackTexts[editTrackInModal.number]||"" } : null}
+                    onClose={()=>setEditTrackInModal(null)}
+                    onSave={({rating:r, text:t})=>{
+                      if (r) setTrackRatings(p=>({...p,[editTrackInModal.number]:r}));
+                      if (t !== undefined) setTrackTexts(p=>({...p,[editTrackInModal.number]:t}));
+                      setEditTrackInModal(null);
+                    }}
+                    inMemory
+                  />
+                )}
               </div>
             )}
             <button onClick={handleSubmit} disabled={!ready} style={{ width:"100%", padding:"13px", background:ready?`linear-gradient(135deg,${T.accent},${T.accent2})`:"#2a2f45", border:"none", borderRadius:12, color:ready?"#fff":T.textMute, fontSize:15, fontWeight:600, cursor:ready?"pointer":"default" }}>
@@ -699,33 +717,39 @@ function WriteModal({ onClose, onAdd, onNavigate, preselectedAlbum=null }) {
 }
 
 // ─── TRACK REVIEW MODAL ───────────────────────────────────────────────────────
-function TrackReviewModal({ track, albumId, existing, onClose, onSave, artist="" }) {
+function TrackReviewModal({ track, albumId, existing, onClose, onSave, artist="", inMemory=false }) {
   const [rating, setRating] = useState(existing?.rating || 0);
   const [text, setText] = useState(existing?.text || "");
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
     if (!rating) return;
+    // Modo inMemory: solo devuelve los datos sin guardar en Supabase
+    if (inMemory) {
+      onSave({ rating, text });
+      return;
+    }
     setSaving(true);
     try {
-      if (existing) {
+      if (existing?.id) {
         const { error } = await supabase.from("track_reviews").update({ rating, text }).eq("id", existing.id);
         if (error) throw error;
       } else {
         const { error } = await supabase.from("track_reviews").insert({ album_id:albumId, track_number:track.number, track_title:track.title, rating, text });
         if (error) throw error;
       }
-      onSave();
+      onSave({ rating, text });
       onClose();
     } catch(e) { alert("Error: "+e.message); }
     setSaving(false);
   };
 
   const handleDelete = async () => {
-    if (!existing) return;
+    if (inMemory) { onSave({ rating:0, text:"" }); return; }
+    if (!existing?.id) return;
     if (!confirm("¿Borrar esta reseña?")) return;
     await supabase.from("track_reviews").delete().eq("id", existing.id);
-    onSave();
+    onSave({ rating:0, text:"" });
     onClose();
   };
 
