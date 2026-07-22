@@ -1703,6 +1703,7 @@ function AlbumPage({ albumId, onNavigate, userId }) {
   const [showAddList, setShowAddList] = useState(false);
   const [albumPreview, setAlbumPreview] = useState(null);
   const [trackPreviews, setTrackPreviews] = useState({});
+  const [winnerMonths, setWinnerMonths] = useState([]);
   const ac = accentFor(albumId);
 
   useEffect(() => {
@@ -1717,6 +1718,11 @@ function AlbumPage({ albumId, onNavigate, userId }) {
       setAlbum(albumData);
       setReviews(reviewData||[]);
       setFollowingIds((followData||[]).map(f=>f.following_id));
+      // Verificar si ganó algún mes
+      if (albumData?.mbid) {
+        supabase.from("monthly_winners").select("month,votes").eq("album_id", albumData.mbid)
+          .then(({data}) => setWinnerMonths(data||[]));
+      }
       if (albumData?.mbid) {
         fetchSpotifyAlbum(albumData.mbid).then(d => {
           if (d.previewUrl) setAlbumPreview(d.previewUrl);
@@ -1774,6 +1780,20 @@ function AlbumPage({ albumId, onNavigate, userId }) {
             <div style={{ paddingBottom:6, flex:1 }}>
               <div style={{ fontSize:26, fontWeight:800, color:T.text, lineHeight:1.1, marginBottom:4 }}>{album.title}</div>
               <div style={{ fontSize:15, color:T.textSub, marginBottom:8 }}>{album.artist}{album.year?` · ${album.year}`:""}</div>
+              {/* Badges de ganador */}
+              {winnerMonths.length > 0 && (
+                <div style={{ display:"flex", flexWrap:"wrap", gap:5, marginBottom:8 }}>
+                  {winnerMonths.map(w => {
+                    const label = new Date(w.month+"-01").toLocaleDateString("es-AR",{month:"long", year:"numeric"});
+                    return (
+                      <div key={w.month} style={{ display:"flex", alignItems:"center", gap:4, background:"linear-gradient(135deg,#f59e0b22,#f59e0b11)", border:"1px solid #f59e0b44", borderRadius:20, padding:"3px 10px" }}>
+                        <span style={{ fontSize:11 }}>🏆</span>
+                        <span style={{ fontSize:11, fontWeight:700, color:"#f59e0b" }}>Álbum del mes · {label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
               {avgRating && <div style={{ marginBottom:10 }}><RatingDisplay n={Number(avgRating)} size={15}/></div>}
               {albumPreview && (
                 <div style={{ display:"flex", alignItems:"center", gap:8 }}>
@@ -2779,6 +2799,7 @@ function MesDelAlbumBanner({ onNavigate, userId }) {
   const [topReseñado, setTopReseñado] = useState(null);
   const [nominations, setNominations] = useState([]);
   const [userVote, setUserVote] = useState(null);
+  const [userNomination, setUserNomination] = useState(null);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -2788,15 +2809,15 @@ function MesDelAlbumBanner({ onNavigate, userId }) {
   const monthName = now.toLocaleDateString("es-AR",{month:"long", year:"numeric"});
 
   const load = async () => {
-    const [{ data:reviews }, { data:noms }, { data:myVote }] = await Promise.all([
+    const [{ data:reviews }, { data:noms }, { data:myVote }, { data:myNom }] = await Promise.all([
       supabase.from("feed_reviews").select("album_id,album_title,artist,cover_url,year")
         .gte("created_at", new Date(now.getFullYear(), now.getMonth(), 1).toISOString())
         .limit(200),
       supabase.from("nominations").select("*, nomination_votes(count)").eq("month", monthKey).order("created_at", {ascending:true}),
       userId ? supabase.from("nomination_votes").select("nomination_id").eq("user_id", userId).eq("month", monthKey).maybeSingle() : { data: null },
+      userId ? supabase.from("nominations").select("id,album_title").eq("month", monthKey).eq("nominated_by", userId).maybeSingle() : { data: null },
     ]);
 
-    // Top reseñado del mes
     if (reviews && reviews.length > 0) {
       const counts = {}; const meta = {};
       reviews.forEach(r => { counts[r.album_id]=(counts[r.album_id]||0)+1; meta[r.album_id]=r; });
@@ -2806,6 +2827,7 @@ function MesDelAlbumBanner({ onNavigate, userId }) {
 
     setNominations((noms||[]).map(n => ({ ...n, voteCount: n.nomination_votes?.[0]?.count || 0 })).sort((a,b)=>b.voteCount-a.voteCount));
     setUserVote(myVote?.nomination_id || null);
+    setUserNomination(myNom || null);
     setLoading(false);
   };
 
@@ -2827,6 +2849,11 @@ function MesDelAlbumBanner({ onNavigate, userId }) {
 
   const nominate = async (album) => {
     if (!userId) return;
+    // Un solo nominado por usuario por mes
+    if (userNomination) {
+      alert(`Ya nominaste "${userNomination.album_title}" este mes. Solo podés nominar un álbum por mes.`);
+      return;
+    }
     const exists = nominations.find(n => n.album_id === album.spotifyId);
     if (exists) { vote(exists.id); return; }
     const { data } = await supabase.from("nominations").insert({
@@ -2834,6 +2861,7 @@ function MesDelAlbumBanner({ onNavigate, userId }) {
       artist: album.artist, cover_url: album.cover, year: album.year, nominated_by: userId
     }).select().single();
     if (data) {
+      setUserNomination({ id: data.id, album_title: album.title });
       const newNom = { ...data, voteCount: 0 };
       setNominations(prev => [...prev, newNom]);
       vote(data.id);
@@ -2911,7 +2939,12 @@ function MesDelAlbumBanner({ onNavigate, userId }) {
       {/* Nominar */}
       <div style={{ padding:"12px 14px", overflow:"visible", position:"relative", zIndex:50 }}>
         <div style={{ fontSize:10, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:8 }}>➕ NOMINÁ UN ÁLBUM</div>
-        <NominationSearch onNominate={nominate}/>
+        {userNomination
+          ? <div style={{ fontSize:12, color:T.accent, padding:"8px 12px", background:`${T.accent}15`, borderRadius:10, border:`1px solid ${T.accent}33` }}>
+              ✅ Nominaste <strong>{userNomination.album_title}</strong> este mes
+            </div>
+          : <NominationSearch onNominate={nominate}/>
+        }
       </div>
       </>)}
     </div>
