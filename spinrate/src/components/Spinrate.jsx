@@ -1417,8 +1417,8 @@ function FeedPage({ onNavigate, onWrite, refreshKey, userId }) {
             {refreshing ? "Actualizando..." : pullY > 50 ? "↑ Soltá para actualizar" : "↓ Tirá para actualizar"}
           </div>
         )}
-        <MesDelAlbumBanner onNavigate={onNavigate} userId={userId}/>
-        <RecomendacionesBanner userId={userId} onNavigate={onNavigate}/>
+        {tab === "recientes" && <MesDelAlbumBanner onNavigate={onNavigate} userId={userId}/>}
+        {tab === "recientes" && <RecomendacionesBanner userId={userId} onNavigate={onNavigate}/>}
         <FeedFilters filters={filters} onChange={setFilters}/>
         {loading ? <FeedSkeleton/> : filtered.length===0 ? (
           <div style={{ textAlign:"center", padding:"60px 20px" }}>
