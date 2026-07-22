@@ -2152,47 +2152,116 @@ function ProfilePage({ onNavigate, userId, viewUserId, onLogout }) {
 function EditReviewModal({ review, onClose, onSaved }) {
   const [text, setText] = useState(review?.text||"");
   const [rating, setRating] = useState(review?.rating||3);
+  const [tags, setTags] = useState(review?.tags||[]);
+  const [favoriteTrack, setFavoriteTrack] = useState(review?.favorite_track||null);
+  const [listenedAt, setListenedAt] = useState(review?.listened_at||"");
+  const [tracklist, setTracklist] = useState([]);
   const [saving, setSaving] = useState(false);
+  const SUGGESTED_TAGS = ["rock","pop","jazz","hip-hop","electronica","indie","metal","clasica","reggae","folk","soul","punk","alternativo","ambient"];
+
+  useEffect(() => {
+    if (review?.mbid) {
+      fetchSpotifyAlbum(review.mbid).then(d => { if (d.tracklist) setTracklist(d.tracklist); });
+    }
+  }, [review?.mbid]);
+
+  const addTag = (tag) => { const t=tag.toLowerCase().trim(); if(t&&!tags.includes(t)&&tags.length<5) setTags(p=>[...p,t]); };
+  const removeTag = (tag) => setTags(p=>p.filter(t=>t!==tag));
 
   const handleSave = async () => {
     setSaving(true);
     const { error } = await supabase.from("reviews")
-      .update({ text: text.trim(), rating: Number(rating) })
+      .update({ text: text.trim(), rating: Number(rating), tags: tags.length>0?tags:null, favorite_track: favoriteTrack||null, listened_at: listenedAt||null })
       .eq("id", review.id);
     if (!error) onSaved();
     else alert("Error: " + error.message);
     setSaving(false);
   };
 
-  return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:300, backdropFilter:"blur(8px)", padding:20 }}
+  return createPortal(
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:400, backdropFilter:"blur(8px)" }}
       onClick={e=>{ if(e.target===e.currentTarget) onClose(); }}>
-      <div style={{ background:T.surface, borderRadius:20, width:"100%", maxWidth:460, border:`1px solid ${T.border}`, padding:"24px" }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+      <div style={{ background:T.surface, borderRadius:"20px 20px 0 0", width:"100%", maxWidth:560, border:`1px solid ${T.border}`, borderBottom:"none", maxHeight:"90vh", display:"flex", flexDirection:"column" }}>
+        {/* Handle */}
+        <div style={{ display:"flex", justifyContent:"center", padding:"12px 0 8px" }}>
+          <div style={{ width:36, height:4, borderRadius:2, background:T.border }}/>
+        </div>
+        {/* Header */}
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"0 20px 12px", borderBottom:`1px solid ${T.border}` }}>
           <div>
-            <div style={{ fontSize:17, fontWeight:700, color:T.text }}>Editar reseña</div>
-            <div style={{ fontSize:12, color:T.textMute, marginTop:2 }}>{review.album_title}</div>
+            <div style={{ fontSize:16, fontWeight:700, color:T.text }}>Editar reseña</div>
+            <div style={{ fontSize:12, color:T.textMute, marginTop:1 }}>{review.album_title} · {review.artist}</div>
           </div>
           <button onClick={onClose} style={{ background:T.surface2, border:`1px solid ${T.border}`, borderRadius:"50%", width:28, height:28, cursor:"pointer", fontSize:15, color:T.textSub, display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
         </div>
-        <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+        {/* Scrollable content */}
+        <div style={{ flex:1, overflowY:"auto", padding:"16px 20px 24px", display:"flex", flexDirection:"column", gap:16 }}>
+          {/* Rating */}
           <div>
-            <div style={{ fontSize:12, color:T.textMute, marginBottom:8 }}>Calificación</div>
-            <Stars n={rating} onChange={setRating} size={28}/>
+            <div style={{ fontSize:11, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:10 }}>PUNTUACIÓN</div>
+            <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+              <Stars n={rating} onChange={setRating} size={30}/>
+              {rating > 0 && <span style={{ fontSize:13, color:T.textSub }}>{rating} estrellas</span>}
+            </div>
           </div>
-          <textarea value={text} onChange={e=>setText(e.target.value)} rows={5} placeholder="Tu reseña..."
-            style={{ width:"100%", padding:"12px 14px", background:T.surface2, border:`1.5px solid ${T.border}`, borderRadius:12, fontSize:14, color:T.text, outline:"none", fontFamily:"Georgia,serif", resize:"none", lineHeight:1.6 }}
-            onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.border}/>
+          {/* Text */}
+          <div>
+            <div style={{ fontSize:11, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:8 }}>RESEÑA</div>
+            <textarea value={text} onChange={e=>setText(e.target.value)} rows={4} placeholder="¿Qué te pareció el álbum?"
+              style={{ width:"100%", padding:"12px 14px", background:T.surface2, border:`1.5px solid ${T.border}`, borderRadius:12, fontSize:14, color:T.text, outline:"none", fontFamily:"inherit", resize:"none", lineHeight:1.6, boxSizing:"border-box" }}
+              onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.border}/>
+          </div>
+          {/* Date */}
+          <div>
+            <div style={{ fontSize:11, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:8 }}>¿CUÁNDO LO ESCUCHASTE?</div>
+            <input type="date" value={listenedAt} onChange={e=>setListenedAt(e.target.value)}
+              style={{ width:"100%", padding:"10px 14px", background:T.surface2, border:`1.5px solid ${T.border}`, borderRadius:12, fontSize:14, color:T.text, outline:"none", fontFamily:"inherit", colorScheme:"dark", boxSizing:"border-box" }}
+              onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.border}/>
+          </div>
+          {/* Tags */}
+          <div>
+            <div style={{ fontSize:11, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:8 }}>GÉNEROS / TAGS (HASTA 5)</div>
+            {tags.length>0 && (
+              <div style={{ display:"flex", flexWrap:"wrap", gap:5, marginBottom:8 }}>
+                {tags.map(t=>(
+                  <span key={t} style={{ display:"flex", alignItems:"center", gap:4, fontSize:12, fontWeight:600, color:T.accent, background:`${T.accent}18`, borderRadius:20, padding:"3px 10px" }}>
+                    #{t} <span onClick={()=>removeTag(t)} style={{ cursor:"pointer" }}>×</span>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div style={{ display:"flex", flexWrap:"wrap", gap:5 }}>
+              {SUGGESTED_TAGS.filter(t=>!tags.includes(t)).slice(0,8).map(t=>(
+                <button key={t} onClick={()=>addTag(t)} style={{ fontSize:11, color:T.textSub, background:T.surface2, border:`1px solid ${T.border}`, borderRadius:20, padding:"3px 9px", cursor:"pointer" }}>+{t}</button>
+              ))}
+            </div>
+          </div>
+          {/* Canción favorita */}
+          {tracklist.length > 0 && (
+            <div>
+              <div style={{ fontSize:11, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:8 }}>⭐ CANCIÓN FAVORITA</div>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                {tracklist.map(track => (
+                  <button key={track.number} onClick={()=>setFavoriteTrack(favoriteTrack===track.title?null:track.title)}
+                    style={{ fontSize:12, padding:"5px 12px", borderRadius:20, border:`1.5px solid ${favoriteTrack===track.title?T.accent:T.border}`, background:favoriteTrack===track.title?`${T.accent}22`:"none", color:favoriteTrack===track.title?T.accent:T.textSub, cursor:"pointer", transition:"all 0.15s", fontWeight:favoriteTrack===track.title?700:400 }}>
+                    {track.title}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* Buttons */}
           <div style={{ display:"flex", gap:10 }}>
-            <button onClick={onClose} style={{ flex:1, padding:"11px", background:"none", border:`1px solid ${T.border}`, borderRadius:12, color:T.textSub, fontSize:14, cursor:"pointer" }}>Cancelar</button>
+            <button onClick={onClose} style={{ flex:1, padding:"12px", background:"none", border:`1px solid ${T.border}`, borderRadius:12, color:T.textSub, fontSize:14, cursor:"pointer" }}>Cancelar</button>
             <button onClick={handleSave} disabled={saving}
-              style={{ flex:2, padding:"11px", background:`linear-gradient(135deg,${T.accent},${T.accent2})`, border:"none", borderRadius:12, color:"#fff", fontSize:14, fontWeight:600, cursor:"pointer" }}>
+              style={{ flex:2, padding:"12px", background:`linear-gradient(135deg,${T.accent},${T.accent2})`, border:"none", borderRadius:12, color:"#fff", fontSize:14, fontWeight:600, cursor:"pointer" }}>
               {saving?"Guardando...":"Guardar cambios"}
             </button>
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -3421,35 +3490,78 @@ function TrendingSection({ onNavigate }) {
 function OnboardingModal({ onDone }) {
   const [step, setStep] = useState(0);
   const steps = [
-    { emoji:"🎵", title:"Bienvenido a Aftertrack", desc:"Tu diario musical personal. Reseñá álbumes, seguí amigos y descubrí música nueva." },
-    { emoji:"⭐", title:"Calificá con medias estrellas", desc:"Puntuá del 0.5 al 5 con precisión. Podés reseñar el álbum completo o canción por canción." },
-    { emoji:"🏷️", title:"Etiquetá con géneros", desc:"Agregá tags como rock, jazz o indie a tus reseñas para que otros puedan descubrirlas." },
-    { emoji:"👥", title:"Seguí a tus amigos", desc:"El feed muestra lo que escuchan las personas que seguís. Buscalos por username." },
+    {
+      emoji:"🎵",
+      title:"Bienvenido a Aftertrack",
+      desc:"Tu diario musical personal. Reseñá álbumes, seguí amigos y descubrí música nueva.",
+      color:"#7c6fff",
+      detail:"Como Letterboxd pero para música 🎶"
+    },
+    {
+      emoji:"⭐",
+      title:"Reseñas completas",
+      desc:"Puntuá el álbum completo con medias estrellas y también canción por canción. Elegí tu track favorito y escuchalo con el preview integrado.",
+      color:"#f59e0b",
+      detail:"Del 0.5 al 5 con total precisión"
+    },
+    {
+      emoji:"▶️",
+      title:"Previews de 30 segundos",
+      desc:"Escuchá cada canción mientras la reseñás. Tocá el botón ▶ en cualquier track para reproducir un preview directo.",
+      color:"#10b981",
+      detail:"Powered by Deezer — funciona sin cuenta"
+    },
+    {
+      emoji:"🏆",
+      title:"Álbum del mes",
+      desc:"Cada mes la comunidad nomina y vota el álbum del mes. ¡Nominá tu favorito y votá por el de otros!",
+      color:"#f59e0b",
+      detail:"Solo un nominado y un voto por persona por mes"
+    },
+    {
+      emoji:"👥",
+      title:"Seguí a tus amigos",
+      desc:"El tab 'Siguiendo' muestra solo lo que escuchan las personas que seguís. Buscalos por username en Explorar.",
+      color:"#7c6fff",
+      detail:"Tu feed, tu música"
+    },
   ];
   const s = steps[step];
   const isLast = step === steps.length - 1;
+  const progress = ((step + 1) / steps.length) * 100;
 
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:500, backdropFilter:"blur(12px)", padding:24 }}>
-      <div style={{ background:T.surface, borderRadius:24, padding:"36px 28px", width:"100%", maxWidth:380, border:`1px solid ${T.border}`, textAlign:"center", animation:"fadeUp 0.3s ease" }}>
-        <div style={{ fontSize:56, marginBottom:16 }}>{s.emoji}</div>
-        <div style={{ fontSize:20, fontWeight:800, color:T.text, marginBottom:10 }}>{s.title}</div>
-        <div style={{ fontSize:14, color:T.textSub, lineHeight:1.7, marginBottom:28 }}>{s.desc}</div>
-        {/* Step dots */}
-        <div style={{ display:"flex", justifyContent:"center", gap:6, marginBottom:24 }}>
-          {steps.map((_,i) => (
-            <div key={i} style={{ width:i===step?20:6, height:6, borderRadius:3, background:i===step?T.accent:T.border, transition:"all 0.3s" }}/>
-          ))}
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.9)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:500, backdropFilter:"blur(16px)", padding:24 }}>
+      <div style={{ background:T.surface, borderRadius:24, width:"100%", maxWidth:400, border:`1px solid ${T.border}`, overflow:"hidden", animation:"fadeUp 0.3s ease" }}>
+        {/* Progress bar */}
+        <div style={{ height:3, background:T.border }}>
+          <div style={{ height:"100%", width:`${progress}%`, background:`linear-gradient(90deg,${s.color},${T.accent2})`, transition:"width 0.4s ease", borderRadius:2 }}/>
         </div>
-        <button onClick={()=>{ if(isLast) onDone(); else setStep(s=>s+1); }}
-          style={{ width:"100%", padding:"13px", background:`linear-gradient(135deg,${T.accent},${T.accent2})`, border:"none", borderRadius:14, color:"#fff", fontSize:15, fontWeight:700, cursor:"pointer" }}>
-          {isLast ? "¡Empezar!" : "Siguiente →"}
-        </button>
-        {!isLast && (
-          <button onClick={onDone} style={{ background:"none", border:"none", color:T.textMute, fontSize:13, cursor:"pointer", marginTop:12, display:"block", margin:"12px auto 0" }}>
-            Saltar
+        {/* Content */}
+        <div style={{ padding:"32px 28px 28px", textAlign:"center" }}>
+          {/* Emoji con fondo */}
+          <div style={{ width:80, height:80, borderRadius:24, background:`${s.color}22`, border:`2px solid ${s.color}44`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:40, margin:"0 auto 20px" }}>
+            {s.emoji}
+          </div>
+          <div style={{ fontSize:20, fontWeight:800, color:T.text, marginBottom:10 }}>{s.title}</div>
+          <div style={{ fontSize:14, color:T.textSub, lineHeight:1.75, marginBottom:12 }}>{s.desc}</div>
+          <div style={{ fontSize:12, color:s.color, fontWeight:600, background:`${s.color}15`, borderRadius:20, padding:"5px 14px", display:"inline-block", marginBottom:28 }}>{s.detail}</div>
+          {/* Step dots */}
+          <div style={{ display:"flex", justifyContent:"center", gap:6, marginBottom:20 }}>
+            {steps.map((_,i) => (
+              <div key={i} onClick={()=>setStep(i)} style={{ width:i===step?20:6, height:6, borderRadius:3, background:i<=step?s.color:T.border, transition:"all 0.3s", cursor:"pointer" }}/>
+            ))}
+          </div>
+          <button onClick={()=>{ if(isLast) onDone(); else setStep(s=>s+1); }}
+            style={{ width:"100%", padding:"13px", background:`linear-gradient(135deg,${s.color},${T.accent2})`, border:"none", borderRadius:14, color:"#fff", fontSize:15, fontWeight:700, cursor:"pointer", marginBottom:10 }}>
+            {isLast ? "¡Empezar! 🎵" : "Siguiente →"}
           </button>
-        )}
+          {!isLast && (
+            <button onClick={onDone} style={{ background:"none", border:"none", color:T.textMute, fontSize:13, cursor:"pointer" }}>
+              Saltar intro
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
