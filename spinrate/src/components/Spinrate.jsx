@@ -2115,7 +2115,7 @@ function ProfilePage({ onNavigate, userId, viewUserId, onLogout }) {
               ))}
             </div>
           )}
-          <ProfileStats reviews={reviews}/>
+          <ProfileStats reviews={reviews} trackReviews={trackReviews}/>
           {isOwnProfile && <div style={{ marginTop:12 }}><PushNotifButton userId={userId}/></div>}
         </div>
 
@@ -3121,54 +3121,65 @@ function NominationSearch({ onNominate }) {
 }
 function RecomendacionesBanner({ userId, onNavigate }) {
   const [albums, setAlbums] = useState([]);
+  const [label, setLabel] = useState("✨ PARA VOS");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!userId) return;
-    // Get user's top tags
-    supabase.from("reviews").select("tags").eq("user_id", userId).limit(30)
-      .then(async ({data}) => {
-        const tagCounts = {};
-        (data||[]).forEach(r => (r.tags||[]).forEach(t => { tagCounts[t]=(tagCounts[t]||0)+1; }));
-        const topTags = Object.entries(tagCounts).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([t])=>t);
-        if (topTags.length===0) { setLoading(false); return; }
+    const load = async () => {
+      // Get user's reviews with tags and artists
+      const { data:myReviewsData } = await supabase.from("reviews")
+        .select("album_id, tags").eq("user_id", userId).limit(50);
+      const myIds = new Set((myReviewsData||[]).map(r=>r.album_id));
 
-        // Get user's reviewed album IDs
-        const {data:myReviews} = await supabase.from("reviews").select("album_id").eq("user_id",userId);
-        const myIds = new Set((myReviews||[]).map(r=>r.album_id));
+      // Top tags
+      const tagCounts = {};
+      (myReviewsData||[]).forEach(r => (r.tags||[]).forEach(t => { tagCounts[t]=(tagCounts[t]||0)+1; }));
+      const topTags = Object.entries(tagCounts).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([t])=>t);
 
-        // Find albums with those tags that user hasn't reviewed
-        const {data:tagged} = await supabase.from("feed_reviews")
-          .select("album_id,album_title,artist,cover_url,year,tags")
-          .overlaps("tags", topTags)
-          .limit(50);
+      if (topTags.length === 0) { setLoading(false); return; }
 
-        const seen = new Set();
-        const recs = (tagged||[]).filter(r => !myIds.has(r.album_id) && !seen.has(r.album_id) && seen.add(r.album_id)).slice(0,6);
-        setAlbums(recs);
-        setLoading(false);
-      });
+      // Find albums with those tags that user hasn't reviewed, ordered by rating
+      const { data:tagged } = await supabase.from("feed_reviews")
+        .select("album_id,album_title,artist,cover_url,year,tags,rating")
+        .overlaps("tags", topTags)
+        .order("rating", {ascending:false})
+        .limit(80);
+
+      const seen = new Set();
+      const recs = (tagged||[])
+        .filter(r => !myIds.has(r.album_id) && !seen.has(r.album_id) && seen.add(r.album_id))
+        .slice(0, 8);
+
+      setAlbums(recs);
+      setLabel(`✨ PORQUE TE GUSTA ${topTags[0]?.toUpperCase()}`);
+      setLoading(false);
+    };
+    load();
   }, [userId]);
 
-  if (loading || albums.length===0) return null;
+  if (loading || albums.length === 0) return null;
 
   return (
     <div style={{ marginBottom:16 }}>
-      <div style={{ fontSize:11, color:T.textMute, fontWeight:700, letterSpacing:0.5, marginBottom:10 }}>✨ PARA VOS</div>
+      <div style={{ fontSize:11, color:T.accent, fontWeight:700, letterSpacing:0.5, marginBottom:10 }}>{label}</div>
       <div style={{ display:"flex", gap:10, overflowX:"auto", paddingBottom:4 }}>
         {albums.map(a => {
           const ac = accentFor(a.album_id);
           return (
             <div key={a.album_id} onClick={()=>onNavigate("album",a.album_id)}
-              style={{ flexShrink:0, cursor:"pointer", width:100 }}>
-              <div style={{ width:100, height:100, borderRadius:12, overflow:"hidden", background:`${ac}22`, marginBottom:6, boxShadow:`0 4px 12px ${ac}33` }}>
+              style={{ flexShrink:0, cursor:"pointer", width:96 }}>
+              <div style={{ width:96, height:96, borderRadius:12, overflow:"hidden", background:`${ac}22`, marginBottom:6, boxShadow:`0 4px 12px ${ac}33`, position:"relative" }}>
                 {a.cover_url
                   ? <img src={a.cover_url} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
                   : <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28, color:ac }}>♪</div>
                 }
+                {Number(a.rating) >= 4.5 && (
+                  <div style={{ position:"absolute", top:4, right:4, background:"#f59e0b", borderRadius:20, padding:"1px 5px", fontSize:9, fontWeight:700, color:"#fff" }}>⭐</div>
+                )}
               </div>
-              <div style={{ fontSize:12, fontWeight:600, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{a.album_title}</div>
-              <div style={{ fontSize:11, color:T.textSub, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{a.artist}</div>
+              <div style={{ fontSize:11, fontWeight:600, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{a.album_title}</div>
+              <div style={{ fontSize:10, color:T.textSub, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{a.artist}</div>
             </div>
           );
         })}
@@ -3358,28 +3369,41 @@ async function registerPushNotifications() {
 }
 
 function PushNotifButton({ userId }) {
-  const [status, setStatus] = useState("idle"); // idle | requesting | enabled | unsupported
+  const [status, setStatus] = useState("idle");
 
   useEffect(() => {
     if (!("Notification" in window)) { setStatus("unsupported"); return; }
     if (Notification.permission === "granted") setStatus("enabled");
+    else if (Notification.permission === "denied") setStatus("denied");
   }, []);
 
   const enable = async () => {
+    if (!("Notification" in window)) return;
     setStatus("requesting");
-    const sub = await registerPushNotifications();
-    if (sub) {
-      // Save subscription to Supabase for later use
-      await supabase.from("profiles").update({ push_subscription: JSON.stringify(sub) }).eq("id", userId);
+    const permission = await Notification.requestPermission();
+    if (permission === "granted") {
       setStatus("enabled");
+      // Guardar preferencia en Supabase
+      await supabase.from("profiles").update({ push_subscription: "granted" }).eq("id", userId);
+      // Mostrar notificación de prueba
+      new Notification("Aftertrack 🎵", {
+        body: "¡Notificaciones activadas! Te avisaremos cuando alguien interactúe con tus reseñas.",
+        icon: "/favicon.ico"
+      });
     } else {
-      setStatus("idle");
+      setStatus("denied");
     }
   };
 
-  if (status === "unsupported" || status === "enabled") return (
-    <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:status==="enabled"?T.accent:T.textMute }}>
-      {status==="enabled" ? "🔔 Notificaciones activadas" : "🔕 Notificaciones no disponibles"}
+  if (status === "unsupported") return (
+    <div style={{ fontSize:12, color:T.textMute }}>🔕 Notificaciones no disponibles en este dispositivo</div>
+  );
+  if (status === "denied") return (
+    <div style={{ fontSize:12, color:T.like }}>🔕 Notificaciones bloqueadas — habilitálas desde la configuración del navegador</div>
+  );
+  if (status === "enabled") return (
+    <div style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:T.accent, fontWeight:600 }}>
+      🔔 Notificaciones activadas
     </div>
   );
 
@@ -3392,50 +3416,58 @@ function PushNotifButton({ userId }) {
 }
 
 // ─── PROFILE STATS ───────────────────────────────────────────────────────────
-function ProfileStats({ reviews }) {
+function ProfileStats({ reviews, trackReviews=[] }) {
   if (reviews.length === 0) return null;
 
-  // Top genres from tags
+  // Top genres
   const tagCounts = {};
   reviews.forEach(r => (r.tags||[]).forEach(t => { tagCounts[t]=(tagCounts[t]||0)+1; }));
-  const topTags = Object.entries(tagCounts).sort((a,b)=>b[1]-a[1]).slice(0,4);
+  const topTags = Object.entries(tagCounts).sort((a,b)=>b[1]-a[1]).slice(0,3);
 
   // Most reviewed year
   const yearCounts = {};
   reviews.forEach(r => { if(r.year) yearCounts[r.year]=(yearCounts[r.year]||0)+1; });
   const topYear = Object.entries(yearCounts).sort((a,b)=>b[1]-a[1])[0]?.[0];
 
-  // Months active
-  const months = new Set(reviews.map(r=>r.created_at?.slice(0,7))).size;
+  // Average rating
+  const avg = reviews.length > 0
+    ? (reviews.reduce((s,r)=>s+Number(r.rating),0)/reviews.length).toFixed(1)
+    : null;
 
-  if (topTags.length===0 && !topYear) return null;
+  // Racha — días consecutivos con reseña
+  const days = new Set(reviews.map(r=>r.created_at?.slice(0,10)));
+  let streak = 0;
+  let d = new Date(); d.setHours(0,0,0,0);
+  while (days.has(d.toISOString().slice(0,10))) { streak++; d.setDate(d.getDate()-1); }
+
+  // Canciones reseñadas
+  const trackCount = trackReviews.length;
 
   return (
     <div style={{ marginTop:12, paddingTop:12, borderTop:`1px solid ${T.border}` }}>
-      <div style={{ display:"flex", gap:16, flexWrap:"wrap" }}>
-        {topYear && (
-          <div>
-            <div style={{ fontSize:10, color:T.textMute, marginBottom:3 }}>AÑO FAVORITO</div>
-            <div style={{ fontSize:13, fontWeight:700, color:T.text }}>{topYear}</div>
+      {/* Números clave */}
+      <div style={{ display:"flex", gap:0, marginBottom:12 }}>
+        {[
+          { label:"Promedio", value:avg||"—", icon:"⭐" },
+          { label:"Canciones", value:trackCount, icon:"🎵" },
+          { label:"Racha", value:streak>0?`${streak}d`:"—", icon:"🔥" },
+          { label:"Año fav.", value:topYear||"—", icon:"📅" },
+        ].map((s,i) => (
+          <div key={i} style={{ flex:1, textAlign:"center", padding:"8px 4px", borderRight: i<3?`1px solid ${T.border}`:"none" }}>
+            <div style={{ fontSize:16, marginBottom:2 }}>{s.icon}</div>
+            <div style={{ fontSize:15, fontWeight:800, color:T.text }}>{s.value}</div>
+            <div style={{ fontSize:10, color:T.textMute, marginTop:1 }}>{s.label}</div>
           </div>
-        )}
-        {months > 0 && (
-          <div>
-            <div style={{ fontSize:10, color:T.textMute, marginBottom:3 }}>MESES ACTIVO</div>
-            <div style={{ fontSize:13, fontWeight:700, color:T.text }}>{months}</div>
-          </div>
-        )}
-        {topTags.length > 0 && (
-          <div>
-            <div style={{ fontSize:10, color:T.textMute, marginBottom:3 }}>GÉNEROS TOP</div>
-            <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
-              {topTags.map(([t,n])=>(
-                <span key={t} style={{ fontSize:11, fontWeight:600, color:T.accent, background:`${T.accent}15`, borderRadius:20, padding:"2px 8px" }}>#{t}</span>
-              ))}
-            </div>
-          </div>
-        )}
+        ))}
       </div>
+      {/* Tags */}
+      {topTags.length > 0 && (
+        <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
+          {topTags.map(([t,n])=>(
+            <span key={t} style={{ fontSize:11, fontWeight:600, color:T.accent, background:`${T.accent}15`, borderRadius:20, padding:"3px 10px" }}>#{t} ·{n}</span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
