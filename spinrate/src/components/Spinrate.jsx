@@ -1704,6 +1704,7 @@ function AlbumPage({ albumId, onNavigate, userId }) {
   const [albumPreview, setAlbumPreview] = useState(null);
   const [trackPreviews, setTrackPreviews] = useState({});
   const [winnerMonths, setWinnerMonths] = useState([]);
+  const [spotifyInfo, setSpotifyInfo] = useState(null);
   const ac = accentFor(albumId);
 
   useEffect(() => {
@@ -1734,6 +1735,10 @@ function AlbumPage({ albumId, onNavigate, userId }) {
           if (d.coverUrl && !albumData.cover_url) {
             supabase.from("albums").update({ cover_url: d.coverUrl }).eq("id", albumId);
           }
+          if (d.genres || d.label || d.spotifyUrl) {
+            setSpotifyInfo({ genres: d.genres||[], label: d.label||null, spotifyUrl: d.spotifyUrl||null });
+          }
+        });
         });
       }
       setLoading(false);
@@ -1810,7 +1815,7 @@ function AlbumPage({ albumId, onNavigate, userId }) {
         {/* Stats card */}
         {avgRating && (
           <div style={{ background:T.surface, borderRadius:20, padding:"18px 22px", border:`1px solid ${T.border}`, marginBottom:14 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:20 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:20, marginBottom: spotifyInfo ? 14 : 0 }}>
               <div style={{ textAlign:"center" }}>
                 <div style={{ fontSize:40, fontWeight:800, color:T.text, lineHeight:1 }}>{avgRating}</div>
                 <div style={{ marginTop:4 }}><Stars n={Math.round(Number(avgRating)*2)/2} size={13}/></div>
@@ -1832,6 +1837,24 @@ function AlbumPage({ albumId, onNavigate, userId }) {
                 })}
               </div>
             </div>
+            {/* Spotify info */}
+            {spotifyInfo && (
+              <div style={{ borderTop:`1px solid ${T.border}`, paddingTop:12 }}>
+                {spotifyInfo.genres?.length > 0 && (
+                  <div style={{ display:"flex", flexWrap:"wrap", gap:5, marginBottom:8 }}>
+                    {spotifyInfo.genres.slice(0,4).map(g => (
+                      <span key={g} style={{ fontSize:11, color:T.accent, background:`${T.accent}18`, borderRadius:20, padding:"3px 10px", fontWeight:600 }}>{g}</span>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display:"flex", gap:16, flexWrap:"wrap" }}>
+                  {spotifyInfo.label && <span style={{ fontSize:11, color:T.textMute }}>🏷️ {spotifyInfo.label}</span>}
+                  {spotifyInfo.spotifyUrl && (
+                    <a href={spotifyInfo.spotifyUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize:11, color:"#1db954", fontWeight:600, textDecoration:"none" }}>▶ Abrir en Spotify</a>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1989,6 +2012,7 @@ function ProfilePage({ onNavigate, userId, viewUserId, onLogout }) {
 
   const [profile, setProfile] = useState(null);
   const [reviews, setReviews] = useState([]);
+  const [trackReviews, setTrackReviews] = useState([]);
   const [followStats, setFollowStats] = useState({ followers:0, following:0 });
   const [isFollowing, setIsFollowing] = useState(false);
   const [tab, setTab] = useState("reseñas");
@@ -1998,15 +2022,17 @@ function ProfilePage({ onNavigate, userId, viewUserId, onLogout }) {
 
   const load = async () => {
     if (!targetId) return;
-    const [{ data:p }, { data:r }, { count:followers }, { count:following }, { data:followCheck }] = await Promise.all([
+    const [{ data:p }, { data:r }, { data:tr }, { count:followers }, { count:following }, { data:followCheck }] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", targetId).single(),
       supabase.from("feed_reviews").select("*").eq("user_id", targetId).order("created_at", {ascending:false}),
+      supabase.from("track_reviews").select("*").eq("user_id", targetId).order("created_at", {ascending:false}).limit(50),
       supabase.from("follows").select("id", {count:"exact"}).eq("following_id", targetId),
       supabase.from("follows").select("id", {count:"exact"}).eq("follower_id", targetId),
       supabase.from("follows").select("id").eq("follower_id", userId).eq("following_id", targetId),
     ]);
     setProfile(p);
     setReviews(r||[]);
+    setTrackReviews(tr||[]);
     setFollowStats({ followers:followers||0, following:following||0 });
     setIsFollowing((followCheck||[]).length > 0);
     setLoading(false);
@@ -2117,9 +2143,9 @@ function ProfilePage({ onNavigate, userId, viewUserId, onLogout }) {
 
         <div style={{ display:"flex", background:T.surface, borderRadius:12, padding:4, marginBottom:14, border:`1px solid ${T.border}`, gap:3 }}>
           {[
-            { key:"reseñas", label:`Reseñas (${reviews.length})` },
-            { key:"favoritos", label:`Favoritos (${favorites.length})` },
-            { key:"actividad", label:"Actividad" },
+            { key:"reseñas", label:`Álbumes (${reviews.length})` },
+            { key:"canciones", label:`Canciones (${trackReviews.length})` },
+            { key:"favoritos", label:`Favoritos` },
           ].map(t=>(
             <button key={t.key} onClick={()=>setTab(t.key)} style={{ flex:1, padding:"8px", border:"none", borderRadius:9, cursor:"pointer", background:tab===t.key?`linear-gradient(135deg,${T.accent},${T.accent2})`:"none", color:tab===t.key?"#fff":T.textSub, fontSize:12, fontWeight:tab===t.key?600:400 }}>
               {t.label}
@@ -2132,6 +2158,22 @@ function ProfilePage({ onNavigate, userId, viewUserId, onLogout }) {
             reviews.length===0
               ? <div style={{ textAlign:"center", padding:"40px 0", color:T.textMute }}><div style={{ fontSize:28, marginBottom:8 }}>📝</div><div>Todavía no reseñaste nada</div></div>
               : <ProfileReviewSearch reviews={reviews} onNavigate={onNavigate} isOwnProfile={isOwnProfile} onEdit={setEditingReview} onDelete={deleteReview}/>
+          )}
+          {tab==="canciones" && (
+            trackReviews.length===0
+              ? <div style={{ textAlign:"center", padding:"40px 0", color:T.textMute }}><div style={{ fontSize:28, marginBottom:8 }}>🎵</div><div>Todavía no reseñaste canciones</div><div style={{ fontSize:12, color:T.textMute, marginTop:4 }}>Entrá a un álbum y puntuá sus tracks</div></div>
+              : <div style={{ background:T.surface, borderRadius:16, border:`1px solid ${T.border}`, overflow:"hidden" }}>
+                  {trackReviews.map((tr, i) => (
+                    <div key={tr.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 16px", borderBottom: i<trackReviews.length-1?`1px solid ${T.border}`:"none" }}>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:13, fontWeight:600, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{tr.track_title}</div>
+                        {tr.text && <div style={{ fontSize:12, color:T.textMute, fontStyle:"italic", marginTop:2 }}>"{tr.text}"</div>}
+                      </div>
+                      <Stars n={tr.rating} size={11}/>
+                      <span style={{ fontSize:12, color:T.textSub, fontWeight:600 }}>{tr.rating}</span>
+                    </div>
+                  ))}
+                </div>
           )}
           {tab==="favoritos" && (
             favorites.length===0
