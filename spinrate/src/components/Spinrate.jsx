@@ -1739,7 +1739,6 @@ function AlbumPage({ albumId, onNavigate, userId }) {
             setSpotifyInfo({ genres: d.genres||[], label: d.label||null, spotifyUrl: d.spotifyUrl||null });
           }
         });
-        });
       }
       setLoading(false);
     };
