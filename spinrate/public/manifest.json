@@ -1,0 +1,68 @@
+{
+  "name": "Aftertrack",
+  "short_name": "Aftertrack",
+  "description": "Tu diario musical. Reseñá álbumes, seguí amigos y descubrí música.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f1117",
+  "theme_color": "#7c6fff",
+  "categories": ["music", "social", "entertainment"],
+  "icons": [
+    {
+      "src": "/icons/icon-72.png",
+      "sizes": "72x72",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-96.png",
+      "sizes": "96x96",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-128.png",
+      "sizes": "128x128",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshots/feed.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Feed de reseñas"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Reseñar álbum",
+      "short_name": "Reseñar",
+      "description": "Escribí una nueva reseña",
+      "url": "/?action=review",
+      "icons": [{ "src": "/icons/icon-96.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Explorar",
+      "short_name": "Explorar",
+      "description": "Buscá álbumes",
+      "url": "/?page=search",
+      "icons": [{ "src": "/icons/icon-96.png", "sizes": "96x96" }]
+    }
+  ]
+}
