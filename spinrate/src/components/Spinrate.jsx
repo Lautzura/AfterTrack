@@ -1950,7 +1950,27 @@ function EditProfileModal({ profile, onClose, onSaved }) {
   const [displayName, setDisplayName] = useState(profile?.display_name||"");
   const [bio, setBio] = useState(profile?.bio||"");
   const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url||"");
+  const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const fileRef = useRef(null);
+
+  const handleImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { alert("La imagen no puede superar 2MB"); return; }
+    setUploading(true);
+    try {
+      const ext = file.name.split(".").pop();
+      const path = `${profile.id}/avatar.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(path, file, { upsert: true, contentType: file.type });
+      if (uploadError) throw uploadError;
+      const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+      setAvatarUrl(data.publicUrl + "?t=" + Date.now());
+    } catch(e) { alert("Error al subir: " + e.message); }
+    setUploading(false);
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -1964,43 +1984,59 @@ function EditProfileModal({ profile, onClose, onSaved }) {
     setSaving(false);
   };
 
-  return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:300, backdropFilter:"blur(8px)", padding:20 }}
+  return createPortal(
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", display:"flex", alignItems:"flex-end", justifyContent:"center", zIndex:400, backdropFilter:"blur(8px)" }}
       onClick={e=>{ if(e.target===e.currentTarget) onClose(); }}>
-      <div style={{ background:T.surface, borderRadius:20, width:"100%", maxWidth:420, border:`1px solid ${T.border}`, padding:"24px" }}>
+      <div style={{ background:T.surface, borderRadius:"20px 20px 0 0", width:"100%", maxWidth:560, border:`1px solid ${T.border}`, borderBottom:"none", padding:"20px 24px 36px" }}>
+        <div style={{ display:"flex", justifyContent:"center", marginBottom:16 }}>
+          <div style={{ width:36, height:4, borderRadius:2, background:T.border }}/>
+        </div>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
           <div style={{ fontSize:17, fontWeight:700, color:T.text }}>Editar perfil</div>
           <button onClick={onClose} style={{ background:T.surface2, border:`1px solid ${T.border}`, borderRadius:"50%", width:28, height:28, cursor:"pointer", fontSize:15, color:T.textSub, display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
+        </div>
+        {/* Avatar upload */}
+        <div style={{ display:"flex", alignItems:"center", gap:16, marginBottom:20 }}>
+          <div style={{ position:"relative", cursor:"pointer" }} onClick={()=>fileRef.current?.click()}>
+            <Avatar src={avatarUrl} name={displayName||profile?.username} size={72}/>
+            <div style={{ position:"absolute", inset:0, borderRadius:"50%", background:"rgba(0,0,0,0.45)", display:"flex", alignItems:"center", justifyContent:"center", opacity:uploading?1:0, transition:"opacity 0.2s" }}
+              onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>{ if(!uploading) e.currentTarget.style.opacity=0; }}>
+              <span style={{ fontSize:20 }}>{uploading?"⏳":"📷"}</span>
+            </div>
+          </div>
+          <div>
+            <button onClick={()=>fileRef.current?.click()} disabled={uploading}
+              style={{ background:`${T.accent}18`, border:`1px solid ${T.accent}44`, borderRadius:20, padding:"7px 16px", color:T.accent, fontSize:13, fontWeight:600, cursor:"pointer", marginBottom:4, display:"block" }}>
+              {uploading ? "Subiendo..." : "Cambiar foto"}
+            </button>
+            <div style={{ fontSize:11, color:T.textMute }}>JPG, PNG o GIF · Máx 2MB</div>
+          </div>
+          <input ref={fileRef} type="file" accept="image/*" style={{ display:"none" }} onChange={handleImageUpload}/>
         </div>
         <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
           <div>
             <div style={{ fontSize:12, color:T.textMute, marginBottom:5 }}>Nombre</div>
             <input value={displayName} onChange={e=>setDisplayName(e.target.value)} placeholder="Tu nombre"
-              style={{ width:"100%", padding:"11px 14px", background:T.surface2, border:`1.5px solid ${T.border}`, borderRadius:12, fontSize:14, color:T.text, outline:"none", fontFamily:"inherit" }}
+              style={{ width:"100%", padding:"11px 14px", background:T.surface2, border:`1.5px solid ${T.border}`, borderRadius:12, fontSize:14, color:T.text, outline:"none", fontFamily:"inherit", boxSizing:"border-box" }}
               onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.border}/>
           </div>
           <div>
             <div style={{ fontSize:12, color:T.textMute, marginBottom:5 }}>Bio</div>
             <textarea value={bio} onChange={e=>setBio(e.target.value)} placeholder="Contá algo sobre vos..." rows={3}
-              style={{ width:"100%", padding:"11px 14px", background:T.surface2, border:`1.5px solid ${T.border}`, borderRadius:12, fontSize:14, color:T.text, outline:"none", fontFamily:"inherit", resize:"none" }}
-              onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.border}/>
-          </div>
-          <div>
-            <div style={{ fontSize:12, color:T.textMute, marginBottom:5 }}>URL de foto de perfil</div>
-            <input value={avatarUrl} onChange={e=>setAvatarUrl(e.target.value)} placeholder="https://..."
-              style={{ width:"100%", padding:"11px 14px", background:T.surface2, border:`1.5px solid ${T.border}`, borderRadius:12, fontSize:14, color:T.text, outline:"none", fontFamily:"inherit" }}
+              style={{ width:"100%", padding:"11px 14px", background:T.surface2, border:`1.5px solid ${T.border}`, borderRadius:12, fontSize:14, color:T.text, outline:"none", fontFamily:"inherit", resize:"none", boxSizing:"border-box" }}
               onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.border}/>
           </div>
           <div style={{ display:"flex", gap:10, marginTop:4 }}>
-            <button onClick={onClose} style={{ flex:1, padding:"11px", background:"none", border:`1px solid ${T.border}`, borderRadius:12, color:T.textSub, fontSize:14, cursor:"pointer" }}>Cancelar</button>
-            <button onClick={handleSave} disabled={saving}
-              style={{ flex:2, padding:"11px", background:`linear-gradient(135deg,${T.accent},${T.accent2})`, border:"none", borderRadius:12, color:"#fff", fontSize:14, fontWeight:600, cursor:"pointer" }}>
+            <button onClick={onClose} style={{ flex:1, padding:"12px", background:"none", border:`1px solid ${T.border}`, borderRadius:12, color:T.textSub, fontSize:14, cursor:"pointer" }}>Cancelar</button>
+            <button onClick={handleSave} disabled={saving||uploading}
+              style={{ flex:2, padding:"12px", background:`linear-gradient(135deg,${T.accent},${T.accent2})`, border:"none", borderRadius:12, color:"#fff", fontSize:14, fontWeight:600, cursor:"pointer" }}>
               {saving?"Guardando...":"Guardar"}
             </button>
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
