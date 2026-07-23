@@ -35,14 +35,14 @@ export default function RootLayout({ children }) {
     <html lang="es">
       <head>
         <link rel="manifest" href="/manifest.json"/>
-        <link rel="apple-touch-icon" href="/icons/icon-192.png"/>
+        <link rel="apple-touch-icon" href="/favicon/apple-touch-icon.png"/>
         <meta name="apple-mobile-web-app-capable" content="yes"/>
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
         <meta name="apple-mobile-web-app-title" content="Aftertrack"/>
         <meta name="mobile-web-app-capable" content="yes"/>
         <meta name="theme-color" content="#7c6fff"/>
         <meta name="msapplication-TileColor" content="#7c6fff"/>
-        <meta name="msapplication-TileImage" content="/icons/icon-192.png"/>
+        <meta name="msapplication-TileImage" content="/favicon/web-app-manifest-192x192.png"/>
       </head>
       <body>{children}</body>
     </html>
