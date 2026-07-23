@@ -1,5 +1,3 @@
-import "./globals.css";
-
 export const metadata = {
   title: "Aftertrack",
   description: "Tu diario musical. Reseñá álbumes, seguí amigos y descubrí música.",
