@@ -2115,7 +2115,16 @@ function ProfilePage({ onNavigate, userId, viewUserId, onLogout }) {
             </div>
           )}
           <ProfileStats reviews={reviews} trackReviews={trackReviews}/>
-          {isOwnProfile && <div style={{ marginTop:12 }}><PushNotifButton userId={userId}/></div>}
+          {isOwnProfile && (
+            <div style={{ marginTop:12, display:"flex", flexDirection:"column", gap:8 }}>
+              <PushNotifButton userId={userId}/>
+              <a href="https://cafecito.app/lautzura" target="_blank" rel="noopener noreferrer"
+                style={{ display:"flex", alignItems:"center", gap:8, background:"linear-gradient(135deg,#6d28d9,#7c3aed)", border:"none", borderRadius:20, padding:"9px 18px", textDecoration:"none", width:"fit-content", boxShadow:"0 4px 14px #7c3aed44" }}>
+                <span style={{ fontSize:16 }}>☕</span>
+                <span style={{ fontSize:13, fontWeight:700, color:"#fff" }}>Invitame un cafecito</span>
+              </a>
+            </div>
+          )}
         </div>
 
         {lastAlbums.length > 0 && (
