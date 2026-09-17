@@ -157,6 +157,31 @@ async function resolveCoverUrl(mbid) {
   } catch { return null; }
 }
 
+async function fetchSpotifyAudioFeatures(albumIdOrTrackIds) {
+  // albumIdOrTrackIds: single album spotifyId, OR array of track IDs
+  try {
+    const param = Array.isArray(albumIdOrTrackIds)
+      ? albumIdOrTrackIds.join(",")
+      : albumIdOrTrackIds;
+    const res = await fetch(`/api/spotify?type=audiofeatures&id=${encodeURIComponent(param)}`);
+    if (!res.ok) return {};
+    const data = await res.json();
+    return data.features || {};
+  } catch { return {}; }
+}
+
+async function fetchSpotifyRecommendations(genres=[], artistIds=[]) {
+  try {
+    const params = new URLSearchParams();
+    if (genres.length)   params.set("q",  genres.join(","));
+    if (artistIds.length) params.set("id", artistIds.join(","));
+    const res = await fetch(`/api/spotify?type=recommendations&${params}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.albums || [];
+  } catch { return []; }
+}
+
 // ─── HALF STARS ──────────────────────────────────────────────────────────────
 function Stars({ n, onChange, size=16 }) {
   const [hover, setHover] = useState(0);
@@ -877,7 +902,7 @@ function DeezerPlayButton({ trackTitle, artist, size=28 }) {
 }
 
 // ─── TRACKLIST ────────────────────────────────────────────────────────────────
-function Tracklist({ albumId, mbid, userId, artist="" }) {
+function Tracklist({ albumId, mbid, userId, artist="", audioFeatures={} }) {
   const [tracks, setTracks] = useState([]);
   const [myReviews, setMyReviews] = useState({});
   const [loading, setLoading] = useState(true);
@@ -923,6 +948,7 @@ function Tracklist({ albumId, mbid, userId, artist="" }) {
       )}
       {tracks.map((track, i) => {
         const review = myReviews[track.number];
+        const feat = audioFeatures[track.spotifyId] || null;
         return (
           <div key={track.number}
             style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 0", borderBottom:`1px solid ${T.border}`, animation:`fadeUp 0.3s ease ${i*0.03}s both` }}>
@@ -931,6 +957,27 @@ function Tracklist({ albumId, mbid, userId, artist="" }) {
               <div style={{ fontSize:14, fontWeight:review?600:400, color:review?T.text:T.textSub, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{track.title}</div>
               {review && <div style={{ marginTop:3 }}><Stars n={review.rating} size={11}/></div>}
               {review?.text && <div style={{ fontSize:12, color:T.textMute, marginTop:4, fontStyle:"italic", lineHeight:1.5 }}>"{review.text}"</div>}
+              {/* Audio feature mini-bars */}
+              {feat && (feat.energy != null || feat.danceability != null) && (
+                <div style={{ display:"flex", gap:8, marginTop:5 }}>
+                  {feat.energy != null && (
+                    <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+                      <span style={{ fontSize:9, color:T.textMute, width:34 }}>⚡ nrg</span>
+                      <div style={{ width:44, height:3, background:T.border, borderRadius:2, overflow:"hidden" }}>
+                        <div style={{ width:`${feat.energy*100}%`, height:"100%", background:`linear-gradient(90deg,#f59e0b,#ef4444)`, borderRadius:2 }}/>
+                      </div>
+                    </div>
+                  )}
+                  {feat.danceability != null && (
+                    <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+                      <span style={{ fontSize:9, color:T.textMute, width:34 }}>🕺 bail</span>
+                      <div style={{ width:44, height:3, background:T.border, borderRadius:2, overflow:"hidden" }}>
+                        <div style={{ width:`${feat.danceability*100}%`, height:"100%", background:`linear-gradient(90deg,${T.accent},${T.accent2})`, borderRadius:2 }}/>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             {track.length && <div style={{ fontSize:12, color:T.textMute, flexShrink:0 }}>{msToMin(track.length)}</div>}
             <button onClick={()=>setEditTrack(track)}
@@ -1705,6 +1752,7 @@ function AlbumPage({ albumId, onNavigate, userId }) {
   const [trackPreviews, setTrackPreviews] = useState({});
   const [winnerMonths, setWinnerMonths] = useState([]);
   const [spotifyInfo, setSpotifyInfo] = useState(null);
+  const [audioFeatures, setAudioFeatures] = useState({});  // trackId -> {energy, danceability, ...}
   const ac = accentFor(albumId);
 
   useEffect(() => {
@@ -1725,19 +1773,30 @@ function AlbumPage({ albumId, onNavigate, userId }) {
           .then(({data}) => setWinnerMonths(data||[]));
       }
       if (albumData?.mbid) {
-        fetchSpotifyAlbum(albumData.mbid).then(d => {
+        fetchSpotifyAlbum(albumData.mbid).then(async d => {
           if (d.previewUrl) setAlbumPreview(d.previewUrl);
           if (d.tracklist) {
             const previews = {};
             d.tracklist.forEach(t => { if (t.previewUrl) previews[`track_${t.number}`] = t.previewUrl; });
             setTrackPreviews(previews);
+            // Fetch audio features using track IDs
+            const trackIds = d.tracklist.map(t => t.spotifyId).filter(Boolean);
+            if (trackIds.length > 0) {
+              fetchSpotifyAudioFeatures(trackIds).then(features => setAudioFeatures(features));
+            }
           }
           if (d.coverUrl && !albumData.cover_url) {
             supabase.from("albums").update({ cover_url: d.coverUrl }).eq("id", albumId);
           }
-          if (d.genres || d.label || d.spotifyUrl) {
-            setSpotifyInfo({ genres: d.genres||[], label: d.label||null, spotifyUrl: d.spotifyUrl||null });
-          }
+          setSpotifyInfo({
+            genres:       d.genres    || [],
+            label:        d.label     || null,
+            spotifyUrl:   d.spotifyUrl|| null,
+            popularity:   d.popularity?? null,
+            total_tracks: d.total_tracks ?? null,
+            release_date: d.release_date ?? null,
+            totalDurationMs: d.totalDurationMs ?? null,
+          });
         });
       }
       setLoading(false);
@@ -1748,6 +1807,23 @@ function AlbumPage({ albumId, onNavigate, userId }) {
   if (loading) return <div style={{ minHeight:"100vh", background:T.bg }}><ProfileSkeleton/></div>;
   if (!album) return null;
 
+  // Format ms → "1h 12m" or "43m"
+  const fmtDuration = (ms) => {
+    if (!ms) return null;
+    const totalMin = Math.floor(ms / 60000);
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  };
+  // Format release_date to full date if available
+  const fmtReleaseDate = (rd) => {
+    if (!rd) return null;
+    if (rd.length === 4) return rd;  // just year
+    try {
+      return new Date(rd).toLocaleDateString("es-AR",{day:"numeric", month:"long", year:"numeric"});
+    } catch { return rd; }
+  };
+
   const avgRating = reviews.length>0
     ? (reviews.reduce((s,r)=>s+Number(r.rating),0)/reviews.length).toFixed(1)
     : null;
@@ -1755,10 +1831,10 @@ function AlbumPage({ albumId, onNavigate, userId }) {
   const friendReviews = reviews.filter(r=>followingIds.includes(r.user_id)||r.user_id===userId);
   const TABS = [
     { key:"canciones", label:"Canciones" },
-    { key:"amigos",    label:`Amigos (${friendReviews.length})` },
-    { key:"todas",     label:`Todas (${reviews.length})` },
+    { key:"reseñas",   label:`Reseñas (${reviews.length})` },
+    { key:"similares", label:"Similares" },
   ];
-  const shownReviews = tab==="amigos" ? friendReviews : reviews;
+  const shownReviews = reviews;
 
   return (
     <div style={{ minHeight:"100vh", background:T.bg, paddingBottom:80 }}>
@@ -1783,7 +1859,7 @@ function AlbumPage({ albumId, onNavigate, userId }) {
             </div>
             <div style={{ paddingBottom:6, flex:1 }}>
               <div style={{ fontSize:26, fontWeight:800, color:T.text, lineHeight:1.1, marginBottom:4 }}>{album.title}</div>
-              <div style={{ fontSize:15, color:T.textSub, marginBottom:8 }}>{album.artist}{album.year?` · ${album.year}`:""}</div>
+              <div onClick={()=>onNavigate("artist",album.artist)} style={{ fontSize:15, color:T.textSub, marginBottom:8, cursor:"pointer" }}>{album.artist}{album.year?` · ${album.year}`:""}</div>
               {/* Badges de ganador */}
               {winnerMonths.length > 0 && (
                 <div style={{ display:"flex", flexWrap:"wrap", gap:5, marginBottom:8 }}>
@@ -1798,13 +1874,39 @@ function AlbumPage({ albumId, onNavigate, userId }) {
                   })}
                 </div>
               )}
-              {avgRating && <div style={{ marginBottom:10 }}><RatingDisplay n={Number(avgRating)} size={15}/></div>}
-              {albumPreview && (
-                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                  <PlayButton previewUrl={albumPreview} size={36}/>
-                  <span style={{ fontSize:12, color:T.textSub }}>Preview 30 seg</span>
+              {avgRating && <div style={{ marginBottom:8 }}><RatingDisplay n={Number(avgRating)} size={15}/></div>}
+              {/* Metadata chips */}
+              {spotifyInfo && (
+                <div style={{ display:"flex", flexWrap:"wrap", gap:5, marginBottom:8 }}>
+                  {fmtReleaseDate(spotifyInfo.release_date) && (
+                    <span style={{ fontSize:11, color:T.textMute, background:T.surface2, borderRadius:20, padding:"2px 9px" }}>📅 {fmtReleaseDate(spotifyInfo.release_date)}</span>
+                  )}
+                  {spotifyInfo.total_tracks && (
+                    <span style={{ fontSize:11, color:T.textMute, background:T.surface2, borderRadius:20, padding:"2px 9px" }}>🎵 {spotifyInfo.total_tracks} canciones</span>
+                  )}
+                  {fmtDuration(spotifyInfo.totalDurationMs) && (
+                    <span style={{ fontSize:11, color:T.textMute, background:T.surface2, borderRadius:20, padding:"2px 9px" }}>⏱ {fmtDuration(spotifyInfo.totalDurationMs)}</span>
+                  )}
+                  {spotifyInfo.popularity != null && (
+                    <span style={{ fontSize:11, color:T.textMute, background:T.surface2, borderRadius:20, padding:"2px 9px" }}>📊 {spotifyInfo.popularity}/100</span>
+                  )}
                 </div>
               )}
+              <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                {albumPreview && (
+                  <>
+                    <PlayButton previewUrl={albumPreview} size={34}/>
+                    <span style={{ fontSize:12, color:T.textSub }}>Preview</span>
+                  </>
+                )}
+                {spotifyInfo?.spotifyUrl && (
+                  <a href={spotifyInfo.spotifyUrl} target="_blank" rel="noopener noreferrer"
+                    style={{ display:"flex", alignItems:"center", gap:5, background:"#1db95422", border:"1px solid #1db95455", borderRadius:20, padding:"4px 12px", textDecoration:"none", color:"#1db954", fontSize:12, fontWeight:700 }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="#1db954"><path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm4.586 14.424c-.18.295-.563.387-.857.207-2.35-1.435-5.305-1.76-8.786-.963-.335.077-.67-.133-.746-.469-.077-.336.132-.67.469-.746 3.809-.87 7.076-.496 9.713 1.115.293.18.386.563.207.856zm1.223-2.723c-.226.367-.706.482-1.072.257-2.687-1.652-6.785-2.131-9.965-1.166-.413.127-.848-.106-.974-.517-.126-.413.106-.848.517-.974 3.632-1.102 8.147-.568 11.238 1.328.366.226.48.706.256 1.072zm.105-2.835C14.692 8.95 9.375 8.775 6.297 9.71c-.493.15-1.016-.129-1.166-.623-.148-.495.13-1.016.623-1.166 3.532-1.073 9.404-.866 13.115 1.337.445.264.590.837.327 1.282-.264.443-.838.59-1.282.326z"/></svg>
+                    Spotify
+                  </a>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -1836,22 +1938,17 @@ function AlbumPage({ albumId, onNavigate, userId }) {
                 })}
               </div>
             </div>
-            {/* Spotify info */}
-            {spotifyInfo && (
+            {/* Géneros y sello */}
+            {spotifyInfo && (spotifyInfo.genres?.length > 0 || spotifyInfo.label) && (
               <div style={{ borderTop:`1px solid ${T.border}`, paddingTop:12 }}>
                 {spotifyInfo.genres?.length > 0 && (
-                  <div style={{ display:"flex", flexWrap:"wrap", gap:5, marginBottom:8 }}>
-                    {spotifyInfo.genres.slice(0,4).map(g => (
+                  <div style={{ display:"flex", flexWrap:"wrap", gap:5, marginBottom: spotifyInfo.label ? 8 : 0 }}>
+                    {spotifyInfo.genres.slice(0,5).map(g => (
                       <span key={g} style={{ fontSize:11, color:T.accent, background:`${T.accent}18`, borderRadius:20, padding:"3px 10px", fontWeight:600 }}>{g}</span>
                     ))}
                   </div>
                 )}
-                <div style={{ display:"flex", gap:16, flexWrap:"wrap" }}>
-                  {spotifyInfo.label && <span style={{ fontSize:11, color:T.textMute }}>🏷️ {spotifyInfo.label}</span>}
-                  {spotifyInfo.spotifyUrl && (
-                    <a href={spotifyInfo.spotifyUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize:11, color:"#1db954", fontWeight:600, textDecoration:"none" }}>▶ Abrir en Spotify</a>
-                  )}
-                </div>
+                {spotifyInfo.label && <span style={{ fontSize:11, color:T.textMute }}>🏷️ {spotifyInfo.label}</span>}
               </div>
             )}
           </div>
@@ -1869,24 +1966,26 @@ function AlbumPage({ albumId, onNavigate, userId }) {
         {/* Canciones tab */}
         {tab==="canciones" && (
           <div style={{ background:T.surface, borderRadius:16, padding:"8px 16px", border:`1px solid ${T.border}`, marginBottom:40 }}>
-            <Tracklist albumId={albumId} mbid={album.mbid} userId={userId} artist={album.artist||""}/>
+            <Tracklist albumId={albumId} mbid={album.mbid} userId={userId} artist={album.artist||""} audioFeatures={audioFeatures}/>
           </div>
         )}
 
-        {/* Reviews tabs */}
-        {(tab==="amigos"||tab==="todas") && (
+        {/* Similares tab */}
+        {tab==="similares" && (
+          <div style={{ paddingBottom:40 }}>
+            <AlbumsSimilares album={album} onNavigate={onNavigate}/>
+          </div>
+        )}
+
+        {/* Reseñas tab */}
+        {tab==="reseñas" && (
           <div style={{ display:"flex", flexDirection:"column", gap:10, paddingBottom:40 }}>
             {shownReviews.length===0 ? (
               <div style={{ background:T.surface, borderRadius:14, padding:"32px", textAlign:"center", border:`1px solid ${T.border}` }}>
                 <div style={{ fontSize:28, marginBottom:8 }}>👋</div>
                 <div style={{ fontSize:14, fontWeight:600, color:T.text, marginBottom:4 }}>
-                  {tab==="amigos"?"Nadie que seguís lo reseñó aún":"Sin reseñas todavía"}
+                  Sin reseñas todavía
                 </div>
-                {tab==="amigos" && reviews.length>0 && (
-                  <button onClick={()=>setTab("todas")} style={{ marginTop:8, background:"none", border:`1px solid ${T.accent}`, borderRadius:20, padding:"7px 18px", color:T.accent, fontSize:13, fontWeight:600, cursor:"pointer" }}>
-                    Ver todas las reseñas
-                  </button>
-                )}
               </div>
             ) : shownReviews.map((r,i)=>{
               const isFriend = followingIds.includes(r.user_id);
@@ -1915,11 +2014,6 @@ function AlbumPage({ albumId, onNavigate, userId }) {
         )}
       </div>
       {showAddList && album && <AddToListModal album={album} userId={userId} onClose={()=>setShowAddList(false)}/>}
-      {album && (
-        <div style={{ maxWidth:560, margin:"0 auto", padding:"0 20px" }}>
-          <AlbumsSimilares album={album} onNavigate={onNavigate}/>
-        </div>
-      )}
     </div>
   );
 }
@@ -2842,29 +2936,60 @@ function ListsPage({ userId, onNavigate }) {
       <div style={{ maxWidth:560, margin:"0 auto", padding:"20px 20px 0" }}>
         {loading ? <Spinner/> : (
           <>
-            {/* Ganadores del mes */}
-            {winners.length > 0 && (
-              <div style={{ marginBottom:28 }}>
-                <div style={{ fontSize:11, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:14 }}>🏆 GANADORES DEL MES</div>
-                <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                  {winners.map((w,i) => {
-                    const ac = accentFor(w.album_id);
-                    const monthLabel = new Date(w.month+"-01").toLocaleDateString("es-AR",{month:"long", year:"numeric"});
-                    return (
-                      <div key={w.month} style={{ display:"flex", gap:12, alignItems:"center", background:T.surface, borderRadius:14, padding:"12px 14px", border:`1px solid ${i===0?T.accent+"44":T.border}` }}>
-                        <div style={{ fontSize:18, width:28, textAlign:"center", flexShrink:0 }}>{i===0?"🥇":i===1?"🥈":i===2?"🥉":"🏅"}</div>
-                        <AlbumCover src={w.cover_url} ac={ac} size={44}/>
-                        <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ fontSize:13, fontWeight:700, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{w.album_title}</div>
-                          <div style={{ fontSize:11, color:T.textSub }}>{w.artist}</div>
-                          <div style={{ fontSize:10, color:T.textMute, marginTop:2 }}>{monthLabel} · {w.votes} voto{w.votes!==1?"s":""}</div>
+            {/* 🏆 Lista automática: Álbum del mes — todos los ganadores */}
+            {winners.length > 0 && (() => {
+              const winnersAutoList = {
+                id: "auto_winners",
+                emoji: "🏆",
+                name: "Álbum del mes",
+                description: `Todos los ganadores históricos · ${winners.length} álbum${winners.length!==1?"es":""}`,
+                albums: winners.map(w => ({
+                  album_id: w.album_id,
+                  album_title: w.album_title,
+                  artist: w.artist,
+                  cover_url: w.cover_url,
+                  year: w.year,
+                  _month: w.month,
+                  _votes: w.votes,
+                })),
+                auto: true,
+              };
+              return (
+                <div style={{ marginBottom:28 }}>
+                  <div style={{ fontSize:11, color:T.textMute, fontWeight:600, letterSpacing:0.5, marginBottom:14 }}>🏆 ÁLBUM DEL MES</div>
+                  {/* Podio compacto — top 3 */}
+                  <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:10 }}>
+                    {winners.slice(0,3).map((w,i) => {
+                      const ac = accentFor(w.album_id);
+                      const monthLabel = new Date(w.month+"-01").toLocaleDateString("es-AR",{month:"long", year:"numeric"});
+                      return (
+                        <div key={w.month} style={{ display:"flex", gap:12, alignItems:"center", background:T.surface, borderRadius:14, padding:"12px 14px", border:`1px solid ${i===0?T.accent+"44":T.border}`, cursor:"pointer", transition:"border-color 0.15s" }}
+                          onClick={()=>onNavigate("album", w.album_id)}
+                          onMouseEnter={e=>e.currentTarget.style.borderColor=T.accent}
+                          onMouseLeave={e=>e.currentTarget.style.borderColor=i===0?T.accent+"44":T.border}>
+                          <div style={{ fontSize:18, width:28, textAlign:"center", flexShrink:0 }}>{i===0?"🥇":i===1?"🥈":"🥉"}</div>
+                          <AlbumCover src={w.cover_url} ac={ac} size={44}/>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontSize:13, fontWeight:700, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{w.album_title}</div>
+                            <div style={{ fontSize:11, color:T.textSub }}>{w.artist}</div>
+                            <div style={{ fontSize:10, color:T.textMute, marginTop:2 }}>{monthLabel} · {w.votes} voto{w.votes!==1?"s":""}</div>
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
+                  {/* Ver todos los ganadores → AutoList */}
+                  {winners.length > 0 && (
+                    <button onClick={()=>onNavigate("autolist", winnersAutoList)}
+                      style={{ width:"100%", background:"none", border:`1px solid ${T.border}`, borderRadius:12, padding:"10px", fontSize:12, color:T.accent, fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6, transition:"border-color 0.15s" }}
+                      onMouseEnter={e=>e.currentTarget.style.borderColor=T.accent}
+                      onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
+                      🏆 Ver todos los ganadores ({winners.length}) →
+                    </button>
+                  )}
                 </div>
-              </div>
-            )}
+              );
+            })()}
             {/* Auto lists — grid de 2 columnas */}
             {autoLists.length > 0 && (
               <div style={{ marginBottom:28 }}>
@@ -2938,6 +3063,11 @@ function AutoListPage({ list, onNavigate }) {
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontSize:14, fontWeight:700, color:T.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{a.album_title||a.title}</div>
                   <div style={{ fontSize:12, color:T.textSub }}>{a.artist}{a.year?` · ${a.year}`:""}</div>
+                  {a._month && (
+                    <div style={{ fontSize:10, color:"#f59e0b", marginTop:2, fontWeight:600 }}>
+                      🏆 {new Date(a._month+"-01").toLocaleDateString("es-AR",{month:"long", year:"numeric"})} · {a._votes} voto{a._votes!==1?"s":""}
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -3183,7 +3313,28 @@ function RecomendacionesBanner({ userId, onNavigate }) {
 
       if (topTags.length === 0) { setLoading(false); return; }
 
-      // Find albums with those tags that user hasn't reviewed, ordered by rating
+      // Try Spotify recommendations first
+      try {
+        const spotifyRecs = await fetchSpotifyRecommendations(topTags);
+        if (spotifyRecs.length >= 3) {
+          // Filter out albums already reviewed
+          const filtered = spotifyRecs.filter(a => !myIds.has(a.spotifyId) && !myIds.has(a.mbid));
+          if (filtered.length >= 3) {
+            setAlbums(filtered.slice(0, 8).map(a => ({
+              album_id: a.spotifyId,
+              album_title: a.title,
+              artist: a.artist,
+              cover_url: a.cover,
+              year: a.year,
+            })));
+            setLabel(`✨ PORQUE TE GUSTA ${topTags[0]?.toUpperCase()}`);
+            setLoading(false);
+            return;
+          }
+        }
+      } catch {}
+
+      // Fallback: Find albums with those tags from Aftertrack's own database
       const { data:tagged } = await supabase.from("feed_reviews")
         .select("album_id,album_title,artist,cover_url,year,tags,rating")
         .overlaps("tags", topTags)
